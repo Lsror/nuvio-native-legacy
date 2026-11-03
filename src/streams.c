@@ -4119,6 +4119,11 @@ static void addonDesenhar(int i, int secao, float tx, float y, float maxw, float
         ak = nVis >= FOLHA_ADDON_FECHADA ? anim * abr : anim;
         pula = nVis >= FOLHA_ADDON_FECHADA && abr < .02f;
       }
+      // Lines outside the list clip are never seen: skip their text lookups
+      // and draws. The margin keeps partly visible text/icons, also at large
+      // UI scales; lines only go down, so the first one below ends the row.
+      if (ly > folhaBase) return;
+      if (ly + fmaxf(64.0f, 64.0f * gfx_escala_ui()) < FOLHA_TOPO - 8.0f) pula = 1;
       nVis++;
       x = tx;
       continue;
