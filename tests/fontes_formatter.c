@@ -13,6 +13,7 @@ static size_t countedClean(const char *s, char *d, size_t n, int flags) {
 #include <SDL2/SDL_image.h>
 #include <assert.h>
 #include <unistd.h>
+#include "source_badge_gl.inc"
 #define CARDS 60
 #define MOVES 118
 static Stream fixtures[CARDS];
@@ -295,6 +296,7 @@ int main(int argc,char **argv) {
   gfx_tamanho_alvo(1920,1080); assert(gfx_iniciar()); assert(txt_iniciar("deploy/app",1));
   gfx_icones_dir("deploy/app/art");   // formatter icons and flags (orphans)
   glViewport(0,0,1920,1080);
+  importedBadgePixels(dir);   // imported pack chips (2.0.8.x, Matis)
   for(int i=0;i<CARDS;i++) {
     Stream *s=&fixtures[i]; s->altura=1080; s->mp4=1; s->fileIdx=-1;
     snprintf(s->url,sizeof s->url,"https://fixture.invalid/%d.mp4",i);
