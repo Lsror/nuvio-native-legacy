@@ -777,6 +777,28 @@ static void atualizarProvedores(void);
 static int aberta, foco, grupo;
 static float rolagem, velRol;
 
+// Existing addon keys are sorted. A normal response contributes one sorted
+// run, so merge it backwards instead of shifting the old list for every row.
+// Equal keys keep the old rows first, exactly like the former stable insert.
+static void ordemAcrescentar(int antes, int qtd) {
+  if (qtd <= 65536) {
+    int old = antes - 1, next = qtd - 1, out = antes + qtd - 1;
+    while (next >= 0) {
+      int i = antes + next;
+      if (old >= 0 && chave[exib[old]] > chave[i]) exib[out--] = exib[old--];
+      else { exib[out--] = i; next--; }
+    }
+    return;
+  }
+  // The legacy 16-bit row key wraps for exceptionally large responses.
+  // Retain the original behavior rather than assuming that run is sorted.
+  for (int k = 0; k < qtd; k++) {
+    int i = antes + k, pos = i;
+    while (pos > 0 && chave[exib[pos - 1]] > chave[i]) { exib[pos] = exib[pos - 1]; pos--; }
+    exib[pos] = i;
+  }
+}
+
 void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
   int i, k = 0, focoIdx = -1, linhaAntes = -1, total;
   Stream *nova, *tmp;
@@ -817,13 +839,7 @@ void stream_lista_acrescentar(const Stream *l, int qtd, int ordemAddon) {
   dicasDebrid(nova, k);
   for (i = 0; i < k; i++)
     chave[n + i] = ((unsigned)(ordemAddon < 0 ? 0 : ordemAddon) << 16) | (unsigned)(i & 0xFFFF);
-  // Insercao ordenada das novas em `exib`: as de antes ja estao em ordem, e
-  // uma nova entra depois de toda chave menor OU IGUAL (estavel).
-  for (i = 0; i < k; i++) {
-    int idx = n + i, pos = n + i;
-    while (pos > 0 && chave[exib[pos - 1]] > chave[idx]) { exib[pos] = exib[pos - 1]; pos--; }
-    exib[pos] = idx;
-  }
+  ordemAcrescentar(n, k);
   n = total;
   atomic_fetch_add(&folhaRevisao, 1);
   if (!temRecebidaEm) { recebidaEm = SDL_GetTicks(); temRecebidaEm = 1; }
@@ -4650,6 +4666,22 @@ static void porLinha(int i, float *y, int automatica) {
 // Tamanho para ordenar: desconhecido (0) vai para o fim do grupo.
 static long tamanhoOrdem(int i) { return lista[i].tamanhoMB > 0 ? lista[i].tamanhoMB : -1; }
 
+// Stable descending merge sort, reusing the StreamFit scratch array. Ties
+// retain addon order, unknown sizes remain last, and source indices never move.
+static void ordenarTamanho(int *ids, int *tmp, int count) {
+  if (count < 2) return;
+  int mid = count / 2;
+  ordenarTamanho(ids, tmp, mid);
+  ordenarTamanho(ids + mid, tmp + mid, count - mid);
+  if (tamanhoOrdem(ids[mid - 1]) >= tamanhoOrdem(ids[mid])) return;
+  int left = 0, right = mid, out = 0;
+  while (left < mid && right < count)
+    tmp[out++] = tamanhoOrdem(ids[left]) >= tamanhoOrdem(ids[right]) ? ids[left++] : ids[right++];
+  while (left < mid) tmp[out++] = ids[left++];
+  while (right < count) tmp[out++] = ids[right++];
+  memcpy(ids, tmp, (size_t)count * sizeof *ids);
+}
+
 // POR QUALIDADE (dono, 02/10): a fonte "Melhor para esta TV" e a PRIMEIRA linha,
 // sozinha e sem cabecalho — o selo dela ja diz o que ela e —, e cada grupo
 // vem do MAIOR arquivo para o menor. Tamanho e o que mais separa duas fontes
@@ -4742,12 +4774,7 @@ static void montarBase(int automatica) {
       i = ORD(k);
       if (i != m && !lista[i].foraCache && passaFiltro(i) && grupoRes(&lista[i]) == g) grupoTmp[nt++] = i;
     }
-    // Insercao estavel: em tamanho igual vale a ordem do addon.
-    for (k = 1; k < nt; k++) {
-      int v = grupoTmp[k], j = k - 1;
-      while (j >= 0 && tamanhoOrdem(grupoTmp[j]) < tamanhoOrdem(v)) { grupoTmp[j + 1] = grupoTmp[j]; j--; }
-      grupoTmp[j + 1] = v;
-    }
+    ordenarTamanho(grupoTmp, grupoFitTmp, nt);
     // Preserve the approved quality groups and descending-size base order.
     // Only measured-heavy sources move back within their own group.
     streamfit_particionar(grupoTmp, nt, fitClasses, fitN, grupoFitTmp);
