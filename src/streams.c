@@ -123,7 +123,9 @@ static Stream *lista;
 static int n = 0;
 // Workers publish source mutations; UI caches consume this revision.
 static _Atomic unsigned folhaRevisao;
+static _Atomic unsigned audioFiltroRevisao;
 static void folhaDados(void);
+static void audioFiltroDescartar(void);
 static float linhaTopo(int row);
 static int cacheConfirmado(const Stream *s) {
   return s->emCache && !s->cacheNegado && (!s->foraCache || s->cacheNativo) && !s->urlP2P && !s->naoVideo;
@@ -754,6 +756,7 @@ void stream_definir_lista_idade(const Stream *l, int qtd, Uint32 idade) {
   // resposta chega. O carimbo vem de quem pediu, em app.c, e e ele que permite
   // a qualquer consumidor perguntar "esta lista e do episodio que eu quero?".
   snprintf(alvoLista, sizeof alvoLista, "%s", alvoPedido);
+  if (!n) audioFiltroDescartar();
 }
 
 void stream_invalidar(const char *porque) {
@@ -2353,7 +2356,8 @@ int stream_vod_renovada_aplicar(int indice, unsigned geracao, const Stream *font
   if (!fonte || !fonte->url[0] || !nv_perfil_sessao_travar(sessao)) return 0;
   pthread_mutex_lock(&verTrava);
   int ok = geracao == listaGeracao && indice >= 0 && indice < n;
-  if (ok) { lista[indice] = *fonte; atomic_fetch_add(&folhaRevisao, 1); }
+  if (ok) { lista[indice] = *fonte; atomic_fetch_add(&folhaRevisao, 1);
+    atomic_fetch_add(&audioFiltroRevisao, 1); }
   pthread_mutex_unlock(&verTrava);
   nv_perfil_sessao_destravar();
   return ok;
@@ -4356,7 +4360,10 @@ static int audioDeclaradoEm(const Stream *s, const char *pref) {
     while (ate > p && isspace((unsigned char)ate[-1])) ate--;
     size_t len = (size_t)(ate - p);
     memcpy(raw, p, len); raw[len] = 0;
-    const char *cod = faixaIdiomaDoNome(raw);
+    // Parser hints normally already contain short ISO codes. Do not search
+    // every translated language name before accepting those same tags.
+    const char *cod = len <= 3 && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo) ? codigo : NULL;
+    if (!cod) cod = faixaIdiomaDoNome(raw);
     if (!cod && faixaIdiomaEtiqueta(raw, codigo, sizeof codigo)) cod = codigo;
     if (cod && ling_casa(cod, pref)) return 1;
     p = f ? f + 1 : fim;
@@ -4377,12 +4384,53 @@ static const char *idiomaDa(const Stream *s) {
   if (temNoTexto(s, "legendado") || temNoTexto(s, "leg")) return "Legendado";
   return NULL;
 }
-static int temAudioPreferido(const Stream *s) {
-  const char *pref = idiomaFiltroAudio();
+static int temAudioPreferidoSemCache(const Stream *s, const char *pref) {
   // An explicit "All" (or an unresolved "Original") is not a guessed
   // language. Otherwise require declared audio metadata, never subtitles,
   // filenames or generic "dub/dual" labels whose language is unknown.
   return !pref[0] || audioDeclaradoEm(s, pref);
+}
+// Raw indices survive addon appends. Audio comes from the parser; a renewed
+// source invalidates this cache through audioFiltroRevisao. One byte per source:
+// 0=unknown, 1=no match, 2=match. Never cache external/temporary Stream values.
+static struct {
+  unsigned char *match;
+  int cap, total;
+  unsigned generation, revision;
+  char language[96];
+} audioFiltroCache;
+static void audioFiltroDescartar(void) {
+  free(audioFiltroCache.match);
+  memset(&audioFiltroCache, 0, sizeof audioFiltroCache);
+}
+static int temAudioPreferido(const Stream *s) {
+  const char *pref = idiomaFiltroAudio();
+  if (!aberta || !lista || !n || strlen(pref) >= sizeof audioFiltroCache.language)
+    return temAudioPreferidoSemCache(s, pref);
+  // Integer range checks also support a temporary Stream from outside lista.
+  uintptr_t offset = (uintptr_t)s - (uintptr_t)lista;
+  if ((uintptr_t)s < (uintptr_t)lista || offset / sizeof *s >= (size_t)n || offset % sizeof *s)
+    return temAudioPreferidoSemCache(s, pref);
+  if (audioFiltroCache.cap < n) {
+    unsigned char *next = realloc(audioFiltroCache.match, (size_t)n);
+    if (!next) return temAudioPreferidoSemCache(s, pref);
+    audioFiltroCache.match = next; audioFiltroCache.cap = n;
+  }
+  unsigned revision = atomic_load(&audioFiltroRevisao);
+  if (audioFiltroCache.generation != listaGeracao || audioFiltroCache.revision != revision ||
+      strcmp(audioFiltroCache.language, pref) ||
+      audioFiltroCache.total > n) {
+    audioFiltroCache.total = 0; audioFiltroCache.generation = listaGeracao;
+    audioFiltroCache.revision = revision;
+    snprintf(audioFiltroCache.language, sizeof audioFiltroCache.language, "%s", pref);
+  }
+  if (audioFiltroCache.total < n) {
+    memset(audioFiltroCache.match + audioFiltroCache.total, 0, (size_t)(n - audioFiltroCache.total));
+    audioFiltroCache.total = n;
+  }
+  unsigned char *match = &audioFiltroCache.match[offset / sizeof *s];
+  if (!*match) *match = (unsigned char)(1 + temAudioPreferidoSemCache(s, pref));
+  return *match == 2;
 }
 static const char *ajudaFiltroAudio(void) {
   static char ajuda[512];
