@@ -1,0 +1,176 @@
+name: Pre-PR check
+
+# Everything a pre-PR review needs that a machine can do, branch vs its merge
+# base with the target branch: the tests that compile a changed file, a strict
+# syntax check of every C file for every platform, the Linux desktop build,
+# the Android debug build (best effort), and, when asked, the normal .tpk
+# build ("Build TPK", which this file does not touch: it still runs alone).
+#
+# Lives on the branch ci/pre-pr-check only, never in a feature branch or PR.
+#   - a push to ci/pre-pr-check runs what .github/prepr/run.conf says
+#   - Actions tab -> Pre-PR check -> Run workflow uses the form (GitHub shows
+#     that button only once this file is also on the default branch)
+
+on:
+  push:
+    branches: [ci/pre-pr-check]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch under review"
+        default: "subtitle-rewrite"
+      base:
+        description: "Branch the PR targets"
+        default: "master"
+      what:
+        description: "What to run"
+        type: choice
+        default: "all"
+        options: ["all", "tpk", "tests", "compile", "linux", "android", "tests compile linux"]
+      pacotes:
+        description: "Packages for the .tpk build"
+        default: "NuvioTpk40 NuvioTpk60 NuvioTpk65 NuvioTpk"
+
+concurrency:
+  group: pre-pr-check-${{ github.ref }}-${{ github.event.inputs.ref || 'conf' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DEPS: >-
+    build-essential gcc-14 pkg-config ffmpeg curl python3 nodejs
+    libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev libgles2-mesa-dev libegl1-mesa-dev
+    zlib1g-dev libssl-dev libcurl4-openssl-dev libass-dev libfreetype-dev libfribidi-dev
+    libharfbuzz-dev libjpeg-dev libpng-dev libwebp-dev
+    libavformat-dev libavcodec-dev libavutil-dev libswresample-dev
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      ref: ${{ steps.p.outputs.ref }}
+      base: ${{ steps.p.outputs.base }}
+      what: ${{ steps.p.outputs.what }}
+      pacotes: ${{ steps.p.outputs.pacotes }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: p
+        env:
+          IN_REF: ${{ github.event.inputs.ref }}
+          IN_BASE: ${{ github.event.inputs.base }}
+          IN_WHAT: ${{ github.event.inputs.what }}
+          IN_PACOTES: ${{ github.event.inputs.pacotes }}
+        run: |
+          val() { sed -n "s/^$1=//p" .github/prepr/run.conf | head -1; }
+          REF=${IN_REF:-$(val REF)}; BASE=${IN_BASE:-$(val BASE)}
+          WHAT=${IN_WHAT:-$(val WHAT)}; PACOTES=${IN_PACOTES:-$(val PACOTES)}
+          [ "$WHAT" = all ] && WHAT="tests compile linux android tpk"
+          for v in "$REF" "$BASE"; do
+            case "$v" in *[!A-Za-z0-9._/-]*|"") echo "bad branch name" >&2; exit 1;; esac
+          done
+          case "$PACOTES" in *[!A-Za-z0-9\ ]*) echo "bad package list" >&2; exit 1;; esac
+          { echo "ref=$REF"; echo "base=$BASE"; echo "what=,$(echo $WHAT | tr ' ' ','),"; echo "pacotes=$PACOTES"; } >> "$GITHUB_OUTPUT"
+          echo "ref $REF, base $BASE, running: $WHAT"
+
+  tests:
+    needs: plan
+    if: contains(needs.plan.outputs.what, ',tests,')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      ASAN_OPTIONS: detect_leaks=0
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: ci }
+      - name: Host dependencies
+        run: sudo apt-get update && sudo apt-get install -y $DEPS
+      - name: Branch and base
+        run: bash ci/.github/prepr/trees.sh "${{ needs.plan.outputs.ref }}" "${{ needs.plan.outputs.base }}"
+      - name: Tests that compile a changed file, branch vs base
+        run: bash ci/.github/prepr/tests.sh
+      - name: Rust MKV core tests, branch vs base
+        if: ${{ !cancelled() }}
+        run: |
+          for lado in a b; do
+            ( cd $lado && cargo test --manifest-path rust/mkvcore/Cargo.toml --locked > ../out-tests/$lado.cargo.log 2>&1 ); echo "$lado cargo test exit $?" | tee -a out-tests/cargo.txt
+          done
+          { echo "### Rust MKV core (cargo test): a = base, b = branch"; echo '```'; cat out-tests/cargo.txt; grep -hE '^test result' out-tests/*.cargo.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          grep -q '^b cargo test exit 0' out-tests/cargo.txt || ! grep -q '^a cargo test exit 0' out-tests/cargo.txt
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with: { name: prepr-tests, path: out-tests, retention-days: 7 }
+
+  compile:
+    needs: plan
+    if: contains(needs.plan.outputs.what, ',compile,')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: ci }
+      - name: Host dependencies
+        run: sudo apt-get update && sudo apt-get install -y $DEPS
+      - name: Branch and base
+        run: bash ci/.github/prepr/trees.sh "${{ needs.plan.outputs.ref }}" "${{ needs.plan.outputs.base }}"
+      - name: Strict syntax check per platform, branch vs base
+        run: JAVA_HOME="${JAVA_HOME_17_X64:-$JAVA_HOME}" bash ci/.github/prepr/compile.sh
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with: { name: prepr-compile, path: out-compile, retention-days: 7 }
+
+  linux:
+    needs: plan
+    if: contains(needs.plan.outputs.what, ',linux,')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: ci }
+      - name: Host dependencies
+        run: sudo apt-get update && sudo apt-get install -y $DEPS
+      - name: Branch and base
+        run: bash ci/.github/prepr/trees.sh "${{ needs.plan.outputs.ref }}" "${{ needs.plan.outputs.base }}"
+      - name: Linux desktop build, branch vs base
+        run: bash ci/.github/prepr/linux.sh
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with: { name: prepr-linux, path: out-linux, retention-days: 7 }
+
+  android:
+    needs: plan
+    if: contains(needs.plan.outputs.what, ',android,')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: ci }
+      - name: Android SDK pieces and Rust targets
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" > /dev/null
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android || true
+          cargo install cargo-ndk --locked || true
+      - name: Branch and base
+        run: bash ci/.github/prepr/trees.sh "${{ needs.plan.outputs.ref }}" "${{ needs.plan.outputs.base }}"
+      - name: Android debug build and unit tests, branch vs base
+        run: bash ci/.github/prepr/android.sh
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with: { name: prepr-android, path: out-android, retention-days: 7 }
+
+  tpk:
+    needs: plan
+    if: contains(needs.plan.outputs.what, ',tpk,')
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    steps:
+      - name: Start "Build TPK" for the branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run build-tpk.yml -R "$GITHUB_REPOSITORY" --ref "${{ needs.plan.outputs.ref }}" -f pacotes="${{ needs.plan.outputs.pacotes }}"
+          echo "Started Build TPK on \`${{ needs.plan.outputs.ref }}\` (${{ needs.plan.outputs.pacotes }}): see the Actions tab." >> "$GITHUB_STEP_SUMMARY"
