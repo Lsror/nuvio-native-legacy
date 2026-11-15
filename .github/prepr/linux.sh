@@ -7,7 +7,10 @@
 set -uo pipefail
 RAIZ=$PWD
 OUT=$RAIZ/out-linux; mkdir -p "$OUT"
-CCX="${PREPR_CC:-gcc-14} -Werror=implicit-function-declaration -Werror=int-conversion -Werror=incompatible-pointer-types"
+# tools/linux.sh runs "$CC" as one word, so the strict flags go in a wrapper.
+CCX=$OUT/cc-strict
+printf '#!/bin/sh\nexec %s -Werror=implicit-function-declaration -Werror=int-conversion -Werror=incompatible-pointer-types "$@"\n' "${PREPR_CC:-gcc-14}" > "$CCX"
+chmod +x "$CCX"
 for lado in a b; do
   ( cd "$RAIZ/$lado" && CC="$CCX" bash tools/linux.sh --build > "$OUT/$lado.log" 2>&1 ); echo $? > "$OUT/$lado.rc"
   if [ -f "$RAIZ/$lado/build/linux/nuvio-native-legacy" ]; then stat -c %s "$RAIZ/$lado/build/linux/nuvio-native-legacy" > "$OUT/$lado.size"; else echo 0 > "$OUT/$lado.size"; fi
