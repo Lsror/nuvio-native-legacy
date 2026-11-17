@@ -3796,6 +3796,9 @@ static size_t addonPula(const char *o, size_t i) {
   return o[i] == 'I' ? i + 4 : i + 1 + strlen(o + i + 1) + 1;
 }
 // O primeiro icone e o primeiro texto de uma linha logica (teste #479).
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))   // so o teste #479 chama
+#endif
 static int addonPrimeiraPeca(const TextoAddon *t, int linha, int *icone, const char **texto) {
   size_t i = 0;
   int l = 0;
