@@ -21,7 +21,10 @@
 // A lista cresce conforme a resposta dos addons; a UI virtualiza as linhas.
 
 typedef struct Stream {
-  char rotulo[192];     // Nome curto da fonte
+  // Nome da fonte como o addon manda. 512 (era 192): formatadores tipo Tamtaro
+  // escrevem o nome em versalete/sobrescrito (2-3 bytes por letra) com emoji, e
+  // a folha "Do addon" mostra o nome inteiro na linha em foco.
+  char rotulo[512];
   char provedor[96];
   // Origem real da instancia do addon, sem URL/token nem inferencia pelo nome.
   char addonChave[FONTEFALHA_CHAVE];
