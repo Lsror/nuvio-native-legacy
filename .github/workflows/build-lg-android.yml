@@ -1,9 +1,11 @@
 name: Build LG and Android
 
 # LG webOS .ipk (tools/arm.sh --ipk --build) and Android .apk (tools/android.sh),
-# the same scripts the owner runs locally, on GitHub's runners. Run it from the
-# Actions tab ("Run workflow") on any branch; it also runs on pushes to master,
-# like build-tpk.yml.
+# the same scripts the owner runs locally, on GitHub's runners. Runs on every
+# push to master and to feature branches (feat/**, fix/**). The Actions tab's
+# "Run workflow" button (any branch, choose LG / high-cache / Android) appears
+# once this file is on master: GitHub only lists manual workflows from the
+# default branch.
 #
 # Optional repository secrets (Settings > Secrets and variables > Actions):
 #   NUVIO_LOCAL_PROPERTIES     the whole local.properties (Supabase, Trakt, Simkl,
@@ -16,7 +18,7 @@ name: Build LG and Android
 
 on:
   push:
-    branches: [master]
+    branches: [master, "feat/**", "fix/**"]
     paths-ignore:
       - "docs/**"
       - "**/*.md"
