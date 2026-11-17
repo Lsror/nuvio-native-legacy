@@ -3772,7 +3772,10 @@ static void textoAddonLimpar(void) {
   free(textoAddon); textoAddon = NULL; textoAddonN = textoAddonCap = 0;
 }
 static void textoAddonMontar(const Stream *s, TextoAddon *t) {
-  size_t cap = strlen(s->rotulo) + strlen(s->descricao) * 2 + 64, k = 0;
+  // Bandeira e lista de idiomas crescem o texto (bloco S..M..E leva os dois
+  // estilos: ate ~2x). Monta com folga de 3x e devolve o que sobrou: com
+  // R + 2D o nome cheio de bandeiras perdia o fim quando a descricao era curta.
+  size_t cap = 3 * (strlen(s->rotulo) + strlen(s->descricao)) + 64, k = 0;
   char *o = malloc(cap + 1);
   char nm[sizeof s->rotulo];
   memset(t, 0, sizeof *t);
@@ -3799,6 +3802,7 @@ static void textoAddonMontar(const Stream *s, TextoAddon *t) {
     p = f + 1;
   }
   o[k] = 0;
+  { char *justo = realloc(o, k + 1); if (justo) o = justo; }
   t->pecas = o; t->nPecas = k;
 }
 static const TextoAddon *textoAddonDa(int i) {
