@@ -3681,10 +3681,39 @@ static void linhaLimpa(char *d, size_t tam, const char *ini, size_t n) {
   d[k] = 0;
 }
 static void legendaProvedor(const Stream *s, char *buf, size_t tam);
+// ARTE QUE NAO VEIO. A atualizacao pelo app do .tpk troca so a libnuvio.so e a
+// arte fica a da instalacao: sem os PNGs novos, cada icone ocupava o seu lugar
+// e nao desenhava nada (buracos no meio do texto). Bandeira sem PNG volta ao
+// codigo do idioma; icone sem PNG usa o do outro estilo, ou some como antes
+// desta mudanca. Na .apk e no .ipk a arte vem sempre inteira e isto so confirma.
+// O disco e consultado uma vez por nome (a arte nao muda com o app aberto).
 static int bandeiraExiste(const char *cc) {
+  static struct { char cc[8]; signed char tem; } visto[400];
+  static int nVisto;
   char nome[32];
+  for (int i = 0; i < nVisto; i++)
+    if (!strcmp(visto[i].cc, cc)) return visto[i].tem;
   snprintf(nome, sizeof nome, "formatador/fl_%s", cc);
-  return gfx_icone_existe(nome);
+  int tem = gfx_icone_existe(nome);
+  if (nVisto < (int)(sizeof visto / sizeof *visto) && strlen(cc) < sizeof visto[0].cc) {
+    snprintf(visto[nVisto].cc, sizeof visto[nVisto].cc, "%s", cc);
+    visto[nVisto++].tem = (signed char)tem;
+  }
+  return tem;
+}
+#define ADDON_ICONES_MAX 512
+static const char *addonIcone(int idx, int minimal, int *cor) {
+  static signed char tem[2][ADDON_ICONES_MAX];   // 0 = nao visto, 1 = existe, -1 = falta
+  if (idx < 0 || idx >= ADDON_ICONES_MAX) { if (cor) *cor = 0; return NULL; }
+  for (int vez = 0; vez < 2; vez++) {
+    int m = vez ? !minimal : minimal;
+    const char *nome = formatador_icone_nome(idx, m, cor);
+    if (!nome || !nome[0]) continue;
+    if (!tem[m][idx]) tem[m][idx] = gfx_icone_existe(nome) ? 1 : -1;
+    if (tem[m][idx] > 0) return nome;
+  }
+  if (cor) *cor = 0;
+  return NULL;
 }
 // O nome numa linha so (espacos e quebras viram um espaco). O ⚡ do comeco sai
 // quando o app ja desenha o proprio raio de "em cache" (#499).
@@ -3885,6 +3914,8 @@ static void addonQuebrar(int i, const Stream *s, TextoAddon *t) {
       if (*pc == 'M') { estilo = 2; continue; }
       if (*pc == 'E') { estilo = 0; continue; }
       if ((estilo == 1 && minimal) || (estilo == 2 && !minimal)) continue;
+      if (*pc == 'I' && !addonIcone(atoi((char[4]){ pc[1], pc[2], pc[3], 0 }), minimal, NULL))
+        continue;   // sem PNG em nenhum estilo: nem lugar ocupa (ver addonIcone)
       if (*pc == 'I' || *pc == 'B') {
         float lw = *pc == 'I' ? ADDON_ICONE_W : ADDON_BANDEIRA_W;
         if (x > 0 && x + lw - 8 > w) { addonPoe(&v, &k, &cap, cab, 4); if (logica) linD++; else linT++; x = 0; }
@@ -3971,8 +4002,9 @@ static void addonDesenhar(int i, int secao, float tx, float y, float maxw,
     if (pula) { q = addonPula(t->vis, q); continue; }
     if (*pc == 'I') {
       int cor = 0, idx = atoi((char[4]){ pc[1], pc[2], pc[3], 0 });
-      const char *nome = formatador_icone_nome(idx, minimal, &cor);
+      const char *nome = addonIcone(idx, minimal, &cor);
       float iy = ly + (secao == 0 ? 9 : 3);   // na altura do texto
+      if (!nome) { q = addonPula(t->vis, q); continue; }
       // Emoji em cores fora do foco: um degrau mais apagado, como o texto.
       if (cor) gfx_icone_cor((GfxRect){x, iy, 22, 22}, nome, ak * (sel ? 1.0f : .8f));
       else gfx_icone((GfxRect){x, iy, 22, 22}, nome, c / 255.0f, c / 255.0f, c / 255.0f, ak);
