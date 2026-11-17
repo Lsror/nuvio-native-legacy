@@ -3845,7 +3845,11 @@ static int addonPrimeiraPeca(const TextoAddon *t, int linha, int *icone, const c
 // QUEBRA. O maior comeco de `s` que cabe em `w`, de preferencia depois de um
 // espaco ou de . - _ / | (nome de arquivo nao tem espaco). Ao menos um
 // caractere, para nunca travar numa coluna estreita demais.
-static size_t addonCorte(TxtEstilo est, const char *s, float w) {
+// `meio` = 1 quando o corte cai DENTRO de uma palavra (nenhuma quebra no que
+// cabe). No meio da linha (`inicio` 0) qualquer quebra serve; no comeco dela
+// so a dos ultimos 2/3, para a linha nao ficar quase vazia.
+static int addonQuebraEm(char c) { return c == ' ' || c == '.' || c == '-' || c == '_' || c == '/' || c == '|'; }
+static size_t addonCorte(TxtEstilo est, const char *s, float w, int inicio, int *meio) {
   size_t n = strlen(s), lo = 0, hi = n, melhor;
   char tmp[2048];
   if (n >= sizeof tmp) n = hi = sizeof tmp - 1;
@@ -3857,11 +3861,17 @@ static size_t addonCorte(TxtEstilo est, const char *s, float w) {
     if (txt_largura(est, tmp) <= w) { if (m == lo) break; lo = m; } else hi = m - 1;
     if (hi < lo) hi = lo;
   }
-  if (!lo) { lo = 1; while (lo < n && ((unsigned char)s[lo] & 0xC0) == 0x80) lo++; return lo; }
+  *meio = 0;
+  if (!lo) {
+    lo = 1; while (lo < n && ((unsigned char)s[lo] & 0xC0) == 0x80) lo++;
+    *meio = lo < n && s[lo] != ' ' && !addonQuebraEm(s[lo - 1]);
+    return lo;
+  }
   if (lo >= n) return n;
   melhor = lo;
-  for (size_t j = lo; j > lo / 3; j--)
-    if (s[j - 1] == ' ' || s[j - 1] == '.' || s[j - 1] == '-' || s[j - 1] == '_' || s[j - 1] == '/' || s[j - 1] == '|') { melhor = j; break; }
+  *meio = s[lo] != ' ';
+  for (size_t j = lo; j > (inicio ? lo / 3 : 0); j--)
+    if (addonQuebraEm(s[j - 1])) { melhor = j; *meio = 0; break; }
   return melhor;
 }
 static int addonPoe(char **v, size_t *k, size_t *cap, const char *src, size_t n) {
@@ -3886,6 +3896,9 @@ static float addonColuna(const Stream *s) {
 static void addonQuebrar(int i, const Stream *s, TextoAddon *t) {
   float L = addonLargura > 0 ? addonLargura
           : FOLHA_W - FOLHA_PAD_E - FOLHA_PAD_D - 2 * FOLHA_TXT;
+  // So a 1a linha do nome divide espaco com a coluna do addon (uma linha de
+  // altura); da 2a em diante o nome usa a largura toda, menos o raio de cache.
+  float wNome2 = L - (cacheConfirmado(s) ? 30.0f : 0.0f);
   float w0 = L - addonColuna(s) - (cacheConfirmado(s) ? 30.0f : 0.0f);
   int fonte = (int)txt_fonte_interface();
   // O estilo muda a largura (bandeira no Padrao, "EN" no Minimalista): as
@@ -3918,7 +3931,7 @@ static void addonQuebrar(int i, const Stream *s, TextoAddon *t) {
         continue;   // sem PNG em nenhum estilo: nem lugar ocupa (ver addonIcone)
       if (*pc == 'I' || *pc == 'B') {
         float lw = *pc == 'I' ? ADDON_ICONE_W : ADDON_BANDEIRA_W;
-        if (x > 0 && x + lw - 8 > w) { addonPoe(&v, &k, &cap, cab, 4); if (logica) linD++; else linT++; x = 0; }
+        if (x > 0 && x + lw - 8 > w) { addonPoe(&v, &k, &cap, cab, 4); if (logica) linD++; else { linT++; w = wNome2; } x = 0; }
         addonPoe(&v, &k, &cap, pc, *pc == 'I' ? 4 : strlen(pc) + 1);
         x += lw;
         continue;
@@ -3927,14 +3940,18 @@ static void addonQuebrar(int i, const Stream *s, TextoAddon *t) {
       while (*r) {
         float lw = (float)txt_largura(est, r);
         if (x + lw <= w) { addonPoe(&v, &k, &cap, "T", 1); addonPoe(&v, &k, &cap, r, strlen(r) + 1); x += lw + ADDON_GAP; break; }
-        if (x > 0 && w - x < 80.0f) {   // pouco espaco sobrando: o texto comeca na linha de baixo
-          addonPoe(&v, &k, &cap, cab, 4); if (logica) linD++; else linT++; x = 0; continue;
+        int meio = 0;
+        size_t c = x > 0 && w - x < 80.0f ? 0 : addonCorte(est, r, w - x, x <= 0, &meio);
+        // Pouco espaco sobrando, ou a palavra nao cabe inteira no resto da
+        // linha ("TAMTAR|O", "TrueH|D"): ela comeca na linha de baixo. Cortar
+        // dentro da palavra so quando ela sozinha passa da linha toda.
+        if (x > 0 && (!c || meio)) {
+          addonPoe(&v, &k, &cap, cab, 4); if (logica) linD++; else { linT++; w = wNome2; } x = 0; continue;
         }
-        size_t c = addonCorte(est, r, w - x);
         size_t ce = c;
         while (ce > 0 && r[ce - 1] == ' ') ce--;
         if (ce) { addonPoe(&v, &k, &cap, "T", 1); addonPoe(&v, &k, &cap, r, ce); addonPoe(&v, &k, &cap, "", 1); }
-        addonPoe(&v, &k, &cap, cab, 4); if (logica) linD++; else linT++; x = 0;
+        addonPoe(&v, &k, &cap, cab, 4); if (logica) linD++; else { linT++; w = wNome2; } x = 0;
         r += c;
         while (*r == ' ') r++;
       }
@@ -3967,12 +3984,14 @@ static float addonLinhasDesc(int linD, float abr) {
 // abre o que passa do fechado: o 2o trecho do nome em diante e a descricao
 // depois da 2a linha. Fora do foco o nome mostra o 1o trecho sem "…": o mesmo
 // trecho que a linha em foco desenha (#479: foco nao rasteriza texto novo).
-static void addonDesenhar(int i, int secao, float tx, float y, float maxw,
+// `maxw2`: largura das linhas do nome depois da 1a (a coluna do addon so
+// divide a 1a; ver addonQuebrar). Na descricao, igual a `maxw`.
+static void addonDesenhar(int i, int secao, float tx, float y, float maxw, float maxw2,
                           int sel, int apagada, float abr, float anim) {
   const TextoAddon *t = textoAddonDa(i);
   int minimal = ajustes_fonte_icones_minimalista();
   int nVis = 0, base = 255, c = 0, pula = 1, logica = -1;
-  float x = tx, ly = y, ak = anim;
+  float x = tx, ly = y, ak = anim, lim = maxw;
   if (!t->vis) return;
   for (size_t q = 0; q < t->nVis; ) {
     const char *pc = t->vis + q;
@@ -3982,6 +4001,7 @@ static void addonDesenhar(int i, int secao, float tx, float y, float maxw,
       if ((logica == 0) != (secao == 0)) { pula = 1; continue; }
       if (secao == 0) {
         ly = y + nVis * FOLHA_ADDON_TD;
+        lim = nVis ? maxw2 : maxw;
         base = 255;
         c = apagada ? (sel ? 150 : 105) : (sel ? 255 : 205);
         ak = nVis >= 1 ? anim * abr : anim;
@@ -4015,7 +4035,7 @@ static void addonDesenhar(int i, int secao, float tx, float y, float maxw,
       gfx_icone_cor((GfxRect){x, ly + (secao == 0 ? 10 : 4), 28, 21}, nome, ak * (sel ? 1.0f : .8f));
       x += ADDON_BANDEIRA_W;
     } else if (*pc == 'T') {
-      float resto = maxw - (x - tx);
+      float resto = lim - (x - tx);
       if (resto > 20) {
         TxtLinha lp = secao == 0 ? txt_linha_corta(TXT_CALLOUT, pc + 1, 255, 255, 253, 255, resto)
                                  : txt_linha_corta(TXT_PG_FIM, pc + 1, base, base, base, 255, resto);
@@ -6345,9 +6365,9 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
       int linT, linD;
       tira=0;
       addonLinhas(i,&linT,&linD);
-      addonDesenhar(i,0,tx+cacheW,cy,txtW-cacheW,sel,apagada,abr,anim);
+      addonDesenhar(i,0,tx+cacheW,cy,txtW-cacheW,(tr-tx)-cacheW,sel,apagada,abr,anim);
       cy+=addonAlturaNome(linT,abr);   // sem desenharFaixas: ver alturaLinha
-      addonDesenhar(i,1,tx,cy,tr-tx,sel,apagada,abr,anim);
+      addonDesenhar(i,1,tx,cy,tr-tx,tr-tx,sel,apagada,abr,anim);
       continue;
     }
     { char nome[96];
