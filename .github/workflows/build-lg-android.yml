@@ -203,6 +203,10 @@ jobs:
           key: android-deps-${{ hashFiles('tools/android/deps.sh', 'tools/android/ffmpeg-android.sh', 'tools/android.sh') }}
           restore-keys: android-deps-
 
+      # ffmpeg: tools/tizen-art.sh turns the .webp art into .png for the APK.
+      - name: Host tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+
       - name: Native deps (curl, jpeg, webp)
         run: bash tools/android/deps.sh
 
