@@ -168,9 +168,12 @@ static const char *idiomaPais(const char *w, size_t n) {
   int maius = 1, letras = 0;
   size_t i;
   if (!n || n >= sizeof k) return NULL;
+  // Bytes fora do ASCII passam como vieram: nomes nativos ("العربية",
+  // "Español", "日本語") estao na tabela com so o ASCII dobrado (ver
+  // tools/idiomas-bandeira.py).
   for (i = 0; i < n; i++) {
     unsigned char c = (unsigned char)w[i];
-    if (c >= 0x80) return NULL;
+    if (c >= 0x80) { k[i] = (char)c; letras++; continue; }
     if (c >= 'a' && c <= 'z') { maius = 0; letras++; }
     else if (c >= 'A' && c <= 'Z') letras++;
     k[i] = (char)(c >= 'A' && c <= 'Z' ? c + 32 : c);
@@ -201,9 +204,24 @@ static size_t sepIdioma(const char *p) {
   return 0;
 }
 
+// Escrita da direita para a esquerda (hebraico, arabe, persa, urdu: U+0590-07FF
+// e as formas de apresentacao U+FB1D-FEFF) em `s`.
+static int temRtl(const char *s, size_t n) {
+  for (size_t i = 0; i < n; i++) {
+    unsigned char c = (unsigned char)s[i];
+    if (c >= 0xD6 && c <= 0xDF) return 1;
+    if (c == 0xEF && i + 1 < n && (unsigned char)s[i + 1] >= 0xAC && (unsigned char)s[i + 1] <= 0xBB) return 1;
+  }
+  return 0;
+}
+
 // Texto limpo depois de um icone de legenda/audio: os idiomas viram bandeira no
 // Padrao. Escreve "S" + pecas do Padrao + "M" + o texto como veio + "E"; sem
 // nenhum idioma reconhecido, nada (devolve 0) e o chamador poe o texto comum.
+//
+// SEPARADOR AO LADO DE TEXTO RTL vira peca propria: cada peca e desenhada (e
+// passa pelo bidi) sozinha, e "العربية |" numa peca so sai "| العربية" — a
+// barra pula para o lado errado. No LTR ele continua colado ao texto, como antes.
 static int idiomas(const char *limpo, char *out, size_t cap, size_t *k,
                    int (*existe)(const char *cc)) {
   size_t k0 = *k, l = strlen(limpo);
@@ -211,6 +229,9 @@ static int idiomas(const char *limpo, char *out, size_t cap, size_t *k,
   int bandeiras = 0;
   char pend[2048];
   size_t np = 0;
+  const char *sepP = NULL;   // separador RTL ainda nao escrito (ver acima)
+  size_t sepN = 0;
+#define SEP_SOLTA() do { if (sepN) { if (!poeTexto(out, cap, k, 'T', sepP, sepN)) goto cheio; sepN = 0; } } while (0)
   if (!poe(out, cap, k, "S", 1)) goto cheio;
   while (*p) {
     size_t s, n;
@@ -225,6 +246,7 @@ static int idiomas(const char *limpo, char *out, size_t cap, size_t *k,
     cc = n ? idiomaPais(p, n) : NULL;
     if (cc && (!existe || existe(cc))) {
       if (np) { if (!poeTexto(out, cap, k, 'T', pend, np)) goto cheio; np = 0; }
+      SEP_SOLTA();
       if (!poeTexto(out, cap, k, 'B', cc, strlen(cc))) goto cheio;
       bandeiras++;
     } else {
@@ -235,9 +257,11 @@ static int idiomas(const char *limpo, char *out, size_t cap, size_t *k,
         cc = idiomaPais(w, (size_t)(e - w));
         if (cc && (!existe || existe(cc))) {
           if (np) { if (!poeTexto(out, cap, k, 'T', pend, np)) goto cheio; np = 0; }
+          SEP_SOLTA();
           if (!poeTexto(out, cap, k, 'B', cc, strlen(cc))) goto cheio;
           bandeiras++;
         } else if (e > w && np + (size_t)(e - w) + 2 < sizeof pend) {
+          SEP_SOLTA();
           if (np) pend[np++] = ' ';
           memcpy(pend + np, w, (size_t)(e - w)); np += (size_t)(e - w);
         }
@@ -248,10 +272,14 @@ static int idiomas(const char *limpo, char *out, size_t cap, size_t *k,
     p = f;
     if ((s = sepIdioma(p))) {
       // separador entre dois textos fica; entre bandeiras some
-      if (np && np + s + 3 < sizeof pend) { pend[np++] = ' '; memcpy(pend + np, p, s); np += s; }
+      if (np && temRtl(pend, np)) {
+        if (!poeTexto(out, cap, k, 'T', pend, np)) goto cheio;
+        np = 0; sepP = p; sepN = s;   // sai so se vier algo depois
+      } else if (np && np + s + 3 < sizeof pend) { pend[np++] = ' '; memcpy(pend + np, p, s); np += s; }
       p += s;
     }
   }
+#undef SEP_SOLTA
   while (np && (pend[np - 1] == ' ' || sepIdioma(pend + np - 1))) np--;
   if (np && !poeTexto(out, cap, k, 'T', pend, np)) goto cheio;
   if (!bandeiras) { *k = k0; out[*k] = 0; return 0; }

@@ -134,6 +134,25 @@ int main(int argc, char **argv) {
       pecas("💾 EN 4 GB", o, sizeof o, &k); legivel(o, k, d, sizeof d);
       snprintf(esp, sizeof esp, "{%03d}[EN 4 GB]", dsk);
       if (strcmp(d, esp)) { printf("FALHA fora de idioma: %s\n", d); ok = 0; }
+      // Nome nativo vira a mesma bandeira do nome em ingles (dono, 18/11:
+      // "العربية" = Arabia Saudita); caixa ASCII dobrada, o resto como veio.
+      pecas("💬 العربية | English", o, sizeof o, &k); legivel(o, k, d, sizeof d);
+      snprintf(esp, sizeof esp, "{%03d}(S<SA><GB>|M[العربية | English])", leg);
+      if (strcmp(d, esp)) { printf("FALHA nativo arabe: %s\n", d); ok = 0; }
+      pecas("🗣 Español, ESPAÑOL, español, 日本語", o, sizeof o, &k); legivel(o, k, d, sizeof d);
+      snprintf(esp, sizeof esp, "{%03d}(S<ES><ES><ES><JP>|M[Español, ESPAÑOL, español, 日本語])", voz);
+      if (strcmp(d, esp)) { printf("FALHA nativos: %s\n", d); ok = 0; }
+      // Separador depois de texto RTL vira peca propria (senao o bidi da peca
+      // joga a barra para o outro lado); no LTR fica colado como antes.
+      pecas("💬 مترجم | English", o, sizeof o, &k); legivel(o, k, d, sizeof d);
+      snprintf(esp, sizeof esp, "{%03d}(S[مترجم][|]<GB>|M[مترجم | English])", leg);
+      if (strcmp(d, esp)) { printf("FALHA separador rtl: %s\n", d); ok = 0; }
+      pecas("💬 مترجم |", o, sizeof o, &k); legivel(o, k, d, sizeof d);   // separador no fim sai
+      snprintf(esp, sizeof esp, "{%03d}[مترجم]", leg);
+      if (strcmp(d, esp)) { printf("FALHA separador rtl no fim: %s\n", d); ok = 0; }
+      pecas("💬 Commentary | English", o, sizeof o, &k); legivel(o, k, d, sizeof d);
+      snprintf(esp, sizeof esp, "{%03d}(S[Commentary |]<GB>|M[Commentary | English])", leg);
+      if (strcmp(d, esp)) { printf("FALHA separador ltr: %s\n", d); ok = 0; }
       printf("legenda: %s\n", "ok");
     }
     k = 0; formatador_pecas("🇿🇿 x", strlen("🇿🇿 x"), o, sizeof o, &k, existe); legivel(o, k, d, sizeof d);

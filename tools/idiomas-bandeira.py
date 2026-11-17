@@ -67,6 +67,34 @@ for k, cc in {'es-419': 'MX', 'es-la': 'MX', 'lat': 'MX', 'pt-br': 'BR', 'pt-pt'
               'fr-ca': 'CA', 'brazilian': 'BR', 'brazilian portuguese': 'BR', 'castilian': 'ES',
               'spanish (latin america)': 'MX', 'latin american spanish': 'MX'}.items():
     poe(k, cc, forte=True)
+# Native names (endonyms): addons that print a language in its own script
+# ("العربية", "Español", "日本語") get the same flag as the English name. Weak
+# (forte=False): an English name or code with the same spelling keeps its flag.
+# The C lookup folds ASCII case only, so each name goes in as written, in
+# lower case and in upper case (ASCII letters folded in all three).
+NATIVOS = {
+    'العربية': 'SA', 'عربي': 'SA', 'বাংলা': 'BD', 'български': 'BG', 'català': 'ES',
+    'čeština': 'CZ', 'česky': 'CZ', 'dansk': 'DK', 'deutsch': 'DE', 'ελληνικά': 'GR',
+    'español': 'ES', 'castellano': 'ES', 'español (latinoamérica)': 'MX', 'español latino': 'MX',
+    'eesti': 'EE', 'euskara': 'ES', 'فارسی': 'IR', 'suomi': 'FI', 'français': 'FR',
+    'français (canada)': 'CA', 'galego': 'ES', 'עברית': 'IL', 'हिन्दी': 'IN', 'hrvatski': 'HR',
+    'magyar': 'HU', 'bahasa indonesia': 'ID', 'íslenska': 'IS', 'italiano': 'IT', '日本語': 'JP',
+    'ქართული': 'GE', 'қазақ тілі': 'KZ', 'ខ្មែរ': 'KH', 'ಕನ್ನಡ': 'IN', '한국어': 'KR',
+    'lietuvių': 'LT', 'latviešu': 'LV', 'македонски': 'MK', 'മലയാളം': 'IN', 'монгол': 'MN',
+    'मराठी': 'IN', 'bahasa melayu': 'MY', 'nederlands': 'NL', 'norsk': 'NO', 'norsk bokmål': 'NO',
+    'ਪੰਜਾਬੀ': 'IN', 'polski': 'PL', 'português': 'PT', 'português (brasil)': 'BR',
+    'português do brasil': 'BR', 'română': 'RO', 'русский': 'RU', 'slovenčina': 'SK',
+    'slovenščina': 'SI', 'shqip': 'AL', 'српски': 'RS', 'srpski': 'RS', 'svenska': 'SE',
+    'kiswahili': 'TZ', 'தமிழ்': 'IN', 'తెలుగు': 'IN', 'ไทย': 'TH', 'filipino': 'PH',
+    'tagalog': 'PH', 'türkçe': 'TR', 'українська': 'UA', 'اردو': 'PK', 'oʻzbekcha': 'UZ',
+    'tiếng việt': 'VN', '中文': 'CN', '简体中文': 'CN', '繁體中文': 'TW', '國語': 'TW',
+    '普通话': 'CN', '粵語': 'HK', '廣東話': 'HK', 'bosanski': 'BA',
+}
+def soAscii(s, f):
+    return ''.join(f(c) if c.isascii() else c for c in s)
+for nome, cc in NATIVOS.items():
+    for v in {nome, nome.lower(), nome.upper(), nome[:1].upper() + nome[1:]}:
+        tab.setdefault(soAscii(v, str.lower).strip(), cc)   # not poe(): it lowercases non-ASCII too
 for k in ('multi', 'und', 'mul', 'zxx', 'mis'):
     tab.pop(k, None)
 
