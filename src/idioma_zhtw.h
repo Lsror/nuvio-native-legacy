@@ -5556,7 +5556,7 @@
   T("Vale para", "適用於"),
   T("Vale para coleções sem escolha própria neste perfil. Automático mantém a exibição original. Em Exibição, escolha Padrão para seguir este ajuste novamente.", "適用於此個人檔案中沒有個別檢視設定的收藏集。自動保留原始檢視。在顯示中選擇預設，即可重新跟隨此設定。"),
   T("Vale para este perfil. Ao mudar, a fileira é remontada na hora.", "對此設定檔有效。變更後,該列會立即重建。"),
-  T("Vale só com Texto das fontes em Do addon. Estilo padrão: os emojis do formatador em cores (Twemoji) e os símbolos dele como ele desenhou. Minimalista: ícones de traço (Lucide) na cor do texto. As bandeiras aparecem nos dois.", "僅在來源文字為「來自外掛」時生效。標準：格式化器的表情以彩色顯示（Twemoji），符號保持原樣。極簡：使用文字顏色的線條圖示（Lucide）。兩種樣式都會顯示國旗。"),
+  T("Vale só com Texto das fontes em Do addon. Estilo padrão: os emojis do formatador em cores (Twemoji) e os símbolos dele como ele desenhou. Minimalista: ícones de traço (Lucide) na cor do texto. No Minimalista, as bandeiras viram o código do idioma.", "僅在來源文字為「來自外掛」時生效。標準：格式化器的表情以彩色顯示（Twemoji），符號保持原樣。極簡：使用文字顏色的線條圖示（Lucide）。極簡樣式顯示語言代碼而非國旗。"),
   T("Vale só nesta TV e neste perfil · não altera a Home dos outros aparelhos", "僅適用於這台電視和此個人檔案 · 不會改變其他裝置的首頁"),
   T("Vale só nesta TV · não altera a Home dos outros aparelhos", "僅適用於這台電視 · 不會改變其他裝置的首頁"),
   T("Vale só nesta TV. Cada fileira a mais é um pedido a mais pela rede quando a Home monta.", "僅適用於這台電視。每多一列，首頁建構時就多一次網路請求。"),

@@ -727,7 +727,8 @@ typedef enum {
   AJ_HERO_PASTA_DETALHES, // Device-local folder hero details, append-only; on by default.
   // ICONES DO TEXTO "DO ADDON" (dono, 17/11): 0 Padrao = Twemoji em cores, os
   // simbolos monocromaticos como glifo, 1 Minimalista = Lucide na cor do texto.
-  // Bandeiras do flagpack nos dois. LOCAL, append-only.
+  // Bandeiras do flagpack so no Padrao (Minimalista: codigo do idioma).
+  // LOCAL, append-only.
   AJ_FONTE_ICONES,
   AJ_N
 } OpcaoId;
@@ -7786,7 +7787,7 @@ static const char *ajudaOpcaoBase(int op) {
     case AJ_ABERTURA: return "Como o logo some quando o app abre. Padrão para um instante, aproxima e esmaece; Só esmaece não aproxima; Direto abre a Home sem parar. Vale só nesta TV.";
     case AJ_FONTE_HDR: return "Preferir: fontes com HDR ou Dolby Vision vêm na frente. Indiferente: o formato não conta. Evitar: prefere SDR na mesma resolução. O Dolby Vision só entra se estiver ligado em Imagem e som; perfil 5 sem HDR10 fica atrás do HDR10, porque sai com cores erradas fora de TV Dolby Vision. Só vale para a escolha automática.";
     case AJ_FONTE_ORDEM_ADDON: return "Por qualidade: as fontes vêm agrupadas por resolução, da maior para a menor, e do maior arquivo para o menor. Do addon: cada addon na ordem em que você o instalou, e as fontes de cada um na ordem em que ele mandou — para quem já ordena no AIOStreams. A escolha automática não muda.";
-    case AJ_FONTE_ICONES: return "Vale só com Texto das fontes em Do addon. Estilo padrão: os emojis do formatador em cores (Twemoji) e os símbolos dele como ele desenhou. Minimalista: ícones de traço (Lucide) na cor do texto. As bandeiras aparecem nos dois.";
+    case AJ_FONTE_ICONES: return "Vale só com Texto das fontes em Do addon. Estilo padrão: os emojis do formatador em cores (Twemoji) e os símbolos dele como ele desenhou. Minimalista: ícones de traço (Lucide) na cor do texto. No Minimalista, as bandeiras viram o código do idioma.";
     case AJ_FONTE_TEXTO: return "Do Nuvio: o nome do título em cima e os logos de qualidade embaixo. Do addon: o nome e a descrição exatamente como o addon manda — para quem já formata o texto no AIOStreams. Logo do título: a logo do título no lugar do nome escrito.";
     case AJ_FONTE_PRAZO: return "As fontes aparecem na lista assim que cada add-on responde. A escolha automática não espera o mais lento: sai quando já há uma fonte boa ou depois deste tempo. Com uma fonte escolhida antes neste título, o add-on dela é sempre esperado.";
     case AJ_FONTE_TOCAR_CONFERINDO: return "Abre o player com a primeira fonte do automático na hora em que a conferência dela começa, em vez de esperar o resultado. Se a conferência reprovar a fonte, volta a esperar e segue para a próxima, sem baixar a qualidade. Torrent e fonte que precisa ser resolvida antes seguem o caminho de sempre.";

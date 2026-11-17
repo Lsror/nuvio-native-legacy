@@ -19,8 +19,8 @@
 //                texto (icones/formatador/sy_<cp>.png)
 //   Minimalista  os dois -> Lucide na cor do texto (icones/aj_<nome>.png)
 // Bandeiras (par de indicadores regionais, e 🏴 Inglaterra/Escocia/Gales) ->
-// flagpack nos dois (icones/formatador/fl_<CC>.png); sem o PNG, o codigo de
-// idioma de sempre (nv_limpar_texto).
+// flagpack no Padrao (icones/formatador/fl_<CC>.png); no Minimalista, e sem o
+// PNG, o codigo de idioma de sempre (nv_limpar_texto).
 // Emoji que nao esta na lista: some, como antes (nv_limpar_texto).
 //
 // Funcoes PURAS (sem SDL), testadas em tests/formatador.c.

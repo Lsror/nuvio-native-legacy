@@ -492,7 +492,7 @@ static void rTexto(void) {   // Do Nuvio / Do addon / Logo do titulo
 
 // ICONES DO "DO ADDON": as duas linhas de uma fonte como o AIOStreams manda,
 // em cima no Padrao (emoji em cores, os desenhos de verdade) e embaixo no
-// Minimalista (Lucide na cor do texto). A bandeira e a mesma nos dois.
+// Minimalista (Lucide na cor do texto). Bandeira so no Padrao (o Minimalista mostra o codigo do idioma).
 static void rIcones(void) {
   static const char *const PAD[3] = { "formatador/tw_1f4fa", "formatador/tw_1f3a7", "formatador/tw_1f4ac" };
   static const char *const MIN[3] = { "aj_tv", "aj_headphones", "aj_message-square" };
@@ -506,7 +506,10 @@ static void rIcones(void) {
       else ajc_icone(MIN[j], x + 12, y + 34, 24, 0.75f * al);
       ajc_barra(x + 34, y + 30, 90, al * 0.6f);
     }
-    gfx_icone_cor(ajc_r(70, y + 62, 28, 21), "formatador/fl_GB", al * C.a);
+    // Bandeira so no Padrao; o Minimalista escreve o codigo do idioma ("EN"),
+    // aqui uma barra curta, como o texto das outras linhas.
+    if (i == 0) gfx_icone_cor(ajc_r(70, y + 62, 28, 21), "formatador/fl_GB", al * C.a);
+    else ajc_barra(70, y + 68, 28, al * 0.6f);
     ajc_barra(108, y + 68, 200, al * 0.45f);
     if (i == v) ajc_foco(40, y, 560, 100, 14, 0.6f + 0.4f * ajc_onda(2.2f));
   }
