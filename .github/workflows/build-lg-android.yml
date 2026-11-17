@@ -1,11 +1,11 @@
 name: Build LG and Android
 
 # LG webOS .ipk (tools/arm.sh --ipk --build) and Android .apk (tools/android.sh),
-# the same scripts the owner runs locally, on GitHub's runners. Runs on every
-# push to master and to feature branches (feat/**, fix/**). The Actions tab's
-# "Run workflow" button (any branch, choose LG / high-cache / Android) appears
-# once this file is on master: GitHub only lists manual workflows from the
-# default branch.
+# the same scripts the owner runs locally, on GitHub's runners. MANUAL ONLY:
+# Actions tab > "Build LG and Android" > "Run workflow", pick the branch and
+# tick LG / high-cache / Android. Nothing runs on push. (GitHub lists manual
+# workflows only once the file is on the default branch; after that the
+# button builds any branch.)
 #
 # Optional repository secrets (Settings > Secrets and variables > Actions):
 #   NUVIO_LOCAL_PROPERTIES     the whole local.properties (Supabase, Trakt, Simkl,
@@ -17,12 +17,6 @@ name: Build LG and Android
 #                              Without them only the debug APK is built.
 
 on:
-  push:
-    branches: [feat/formatter-icons]   # TEMPORARY: verifying the Android job
-    paths-ignore:
-      - "docs/**"
-      - "**/*.md"
-      - ".github/ISSUE_TEMPLATE/**"
   workflow_dispatch:
     inputs:
       lg:
@@ -131,7 +125,7 @@ jobs:
           bash tools/arm.sh --ipk --build 2>&1 | tee build-lg.log
 
       - name: Build the high-cache .ipk
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.lg_highcache }}
+        if: ${{ inputs.lg_highcache }}
         run: |
           set -o pipefail
           bash tools/arm.sh --high-cache --ipk --build 2>&1 | tee -a build-lg.log
@@ -151,7 +145,7 @@ jobs:
 
   android:
     name: Android (.apk)
-    if: ${{ github.event_name == 'push' || inputs.android }}
+    if: ${{ inputs.android }}
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
