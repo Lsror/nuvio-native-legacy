@@ -2,6 +2,7 @@
 #include "mediaurl.h"
 #include "badges.h"
 #include "js.h"
+#include "cachemarca.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -949,44 +950,39 @@ static void lerProxyHeaders(const char *bh, const char *fim, char *dst, unsigned
   }
 }
 
-// "FORA DE CACHE" DITO PELO ADDON. As marcas sao as que os addons mandam de
-// verdade: "⏳" e o que o AIOStreams poe no nome de toda fonte nao cacheada
-// (registros 1136, 2191, 2501: "⏳ UHD", "⏳ FHD"; a cacheada vem com "⚡"), o
-// Torrentio escreve "[TB download]" / "[RD download]" (a cacheada e "[TB+]"),
-// e outros usam "⬇" ou a palavra "uncached". "download]" e nao "download"
-// solto: "WEB-DL"/"Download" aparecem em titulo de fonte cacheada.
-int stream_texto_fora_de_cache(const char *t) {
-  if (!t) return 0;
-  return strstr(t, "\xe2\x8f\xb3") != NULL          // U+23F3 ⏳
-      || strstr(t, "\xe2\xac\x87") != NULL          // U+2B07 ⬇
-      || contem(t, " download]") || contem(t, "uncached") || contem(t, "not cached");
-}
-
-// As marcas positivas que os addons usam (AIOStreams/Torrentio). Nao ler
-// arquivo, URL ou o nome configurado do addon: nao descrevem disponibilidade.
-static int textoEmCache(const char *t) {
-  return t && (strstr(t, "\xe2\x9a\xa1") || contem(t, "[TB+]") || contem(t, "[RD+]") ||
-               contem(t, "[PM+]") || contem(t, "[AD+]"));
-}
-static int marcaEmCache(const char *p, const char *fim) {
-  static const char *const campos[] = {"name", "description", "title"};
-  char texto[2048];
-  for (unsigned i = 0; i < sizeof campos / sizeof *campos; i++)
-    if (js_texto_raiz_em(p, fim, campos[i], texto, sizeof texto) && textoEmCache(texto)) return 1;
-  return 0;
-}
+// "FORA DE CACHE" DITO PELO ADDON: as regras de cachemarca.h (as marcas do
+// claude/formatter-cached-markers.md). Mantido pelo nome antigo porque o
+// teste e o resto do app ja o chamam.
+int stream_texto_fora_de_cache(const char *t) { return cachemarca_fora(t); }
 
 // Booleano da PROPRIA fonte, nao de cabecalhos nem da fonte seguinte.
 // 0 = ausente/invalido; -1 = false; 1 = true. Strings e numeros nao contam.
-static int cacheDeclarado(const char *p, const char *fim) {
-  const char *cr = objetoRaiz(p, fim, "clientResolve");
-  if (!cr) return 0;
-  const char *f = js_fim(cr), *v = valorRaiz(cr, f, "isCached");
+static int boolEm(const char *obj, const char *chave) {
+  if (!obj) return 0;
+  const char *f = js_fim(obj), *v = valorRaiz(obj, f, chave);
   if (!v) return 0;
   unsigned n = *v == 't' ? 4 : 5;
   if (f - v < n || memcmp(v, n == 4 ? "true" : "false", n)) return 0;
   const char *apos = faixasEspacos(v + n, f);
   return apos < f && (*apos == ',' || *apos == '}') ? (n == 4 ? 1 : -1) : 0;
+}
+// O ESTADO EXATO, quando o addon manda (vence qualquer texto):
+//   streamData.service.cached / streamData.library  AIOStreams, so para quem
+//       pede com User-Agent "AIO..." (addons.c manda esse cabecalho a ele);
+//       biblioteca = ja esta na conta, toca na hora.
+//   clientResolve.isCached                            AIOStreams/Nuvio
+//   behaviorHints.cached                              StreamNZB e outros
+static int cacheDeclarado(const char *p, const char *fim) {
+  const char *sd = objetoRaiz(p, fim, "streamData");
+  if (sd) {
+    const char *sv = objetoRaiz(sd, js_fim(sd), "service");
+    int c = boolEm(sv, "cached");
+    if (boolEm(sd, "library") > 0) return 1;
+    if (c) return c;
+  }
+  int c = boolEm(objetoRaiz(p, fim, "clientResolve"), "isCached");
+  if (c) return c;
+  return boolEm(objetoRaiz(p, fim, "behaviorHints"), "cached");
 }
 
 // "sources": ["tracker:udp://...", "dht:<hash>"] de um stream de torrent, uma
@@ -1107,7 +1103,6 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
       textoRaizLinhas(p, fim, "description", s.descricao, sizeof s.descricao);
       textoRaizLinhas(p, fim, "title", titulo, sizeof titulo);
       int cache = cacheDeclarado(p, fim);
-      s.emCache = cache > 0 || (cache == 0 && marcaEmCache(p, fim));
       s.cacheNegado = cache < 0;
       metadadosFaixas(p, fim, &s);
       metadadosFiltro(p, fim, nomeFonte, s.descricao, titulo, &s);
@@ -1170,18 +1165,27 @@ int stream_extrair(const char *json, const char *provedor, Stream **saida) {
       // nomes que os addons mandam (ao contrario de "dv", que precisa do
       // cuidado de token() com DVDRip — o mesmo cuidado ja se aplica aqui).
       s.av1 = token(texto, "av1") || contem(texto, "av01");
-      s.foraCache = stream_texto_fora_de_cache(texto);
-      // Cached by the add-on's own mark (clientResolve.isCached:true or "⚡" in
-      // the name): only the full source name can veto it. A mark found only in the
-      // description/title never overrides a negative status there. A "⏳" age, "download]" or "uncached" deep
-      // in the description/filename (AIOStreams + TorBox) marked every cached
-      // stream "not cached", and the verified auto pick dropped all of them.
-      if (s.foraCache && strlen(nomeFonte) < sizeof nomeFonte - 1 &&
-          (cache > 0 || (cache == 0 && textoEmCache(nomeFonte))) &&
-          !stream_texto_fora_de_cache(nomeFonte)) s.foraCache = 0;
-      // AIOStreams: clientResolve.isCached e explicito; ausente nao e false.
-      if (s.infoHash[0] && !s.url[0] && cache < 0) s.foraCache = 1;
-      if (s.foraCache) s.emCache = 0;
+      // CACHE (cachemarca.h). O estado declarado vence; sem ele, o texto: nome
+      // inteiro (lido sem teto: a marca pode estar depois dos 1024 bytes de
+      // nomeFonte) e descricao+titulo, nunca o nome do arquivo.
+      { size_t tn = (size_t)(fim - p) + 1;
+        char *nomeTodo = malloc(tn);
+        int textoRes = 0;
+        if (nomeTodo) {
+          nomeTodo[0] = 0;
+          textoRaizLinhas(p, fim, "name", nomeTodo, tn);
+          textoRes = cachemarca_fonte(nomeTodo[0] ? nomeTodo : NULL, s.descricao, provedor, NULL);
+          free(nomeTodo);
+        }
+        if (cache > 0) { s.emCache = 1; s.foraCache = 0; }
+        else if (cache < 0) {
+          // A negativa declarada e visual quando ha URL direta (pode tocar);
+          // so o torrent sem URL fica fora de vez — ou o texto tambem diz.
+          s.emCache = 0;
+          // (com a negativa declarada, qualquer "fora" no texto confirma).
+          s.foraCache = (s.infoHash[0] && !s.url[0]) || textoRes < 0 || cachemarca_fora(s.descricao);
+        } else { s.emCache = textoRes > 0; s.foraCache = textoRes < 0; }
+      }
       if (s.infoHash[0]) s.temSemeadores = lerSemeadores(texto, &s.semeadores);
       s.tamanhoBytes = bytesExatos(p, fim);
       double bytes = js_num(p, fim, "videoSize", 0);

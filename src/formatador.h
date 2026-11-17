@@ -44,6 +44,11 @@ const char *formatador_icone_utf8(int idx);
 //   'T' texto '\0'   texto ja limpo (nv_limpar_texto + nv_aparar_separadores)
 //   'I' d d d        icone: indice em 3 digitos decimais
 //   'B' CC '\0'      bandeira: "GB", "BR", "GB-ENG"...
+//   'S' ... 'M' ... 'E'   o que muda com o estilo: entre S e M o Padrao, entre M
+//                    e E o Minimalista. Bandeira = S B M T"EN" E (o Minimalista
+//                    nao desenha bandeira: escreve o codigo de idioma). Lista de
+//                    idiomas em texto depois de um icone de legenda/audio
+//                    (💬 📝 🔤 🦻 🗣 🌐 🌎 🌍 🎙 👂 ⚐ ⚑ ☰) = S bandeiras M texto E.
 // Quebras de linha dentro de `in` viram espaco. `bandeira_existe` (pode ser
 // NULL = todas existem) diz se ha PNG para o codigo; sem ele a bandeira volta
 // ao texto e vira o codigo de idioma. Devolve o numero de pecas escritas; para

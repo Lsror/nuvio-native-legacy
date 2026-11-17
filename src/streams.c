@@ -3720,7 +3720,7 @@ typedef struct {
   int nl;
   char *pecas; size_t nPecas;
   char *vis; size_t nVis;
-  float kw0, kw; int kFonte, linT, linD;
+  float kw0, kw; int kFonte, kMin, linT, linD;
 } TextoAddon;
 static TextoAddon *textoAddon;
 static int textoAddonN, textoAddonCap;
@@ -3783,6 +3783,7 @@ static const TextoAddon *textoAddonDa(int i) {
 
 // Pula uma peca e devolve o inicio da seguinte.
 static size_t addonPula(const char *o, size_t i) {
+  if (o[i] == 'S' || o[i] == 'M' || o[i] == 'E') return i + 1;   // bloco de estilo
   return o[i] == 'I' ? i + 4 : i + 1 + strlen(o + i + 1) + 1;
 }
 // O primeiro icone e o primeiro texto de uma linha logica (teste #479).
@@ -3846,12 +3847,15 @@ static void addonQuebrar(int i, const Stream *s, TextoAddon *t) {
           : FOLHA_W - FOLHA_PAD_E - FOLHA_PAD_D - 2 * FOLHA_TXT;
   float w0 = L - addonColuna(s) - (cacheConfirmado(s) ? 30.0f : 0.0f);
   int fonte = (int)txt_fonte_interface();
+  // O estilo muda a largura (bandeira no Padrao, "EN" no Minimalista): as
+  // pecas de um estilo so entram na quebra dele (blocos S..M..E).
+  int minimal = ajustes_fonte_icones_minimalista(), estilo = 0;
   char *v = NULL;
   size_t k = 0, cap = 0, j = 0;
   int logica = 0, linT = 0, linD = 0;
   (void)i;
   if (w0 < 120.0f) w0 = 120.0f;
-  if (t->vis && t->kw0 == w0 && t->kw == L && t->kFonte == fonte) return;
+  if (t->vis && t->kw0 == w0 && t->kw == L && t->kFonte == fonte && t->kMin == minimal) return;
   if (!t->pecas) return;
   while (j <= t->nPecas) {
     // Uma linha logica: [j, fim)
@@ -3865,6 +3869,10 @@ static void addonQuebrar(int i, const Stream *s, TextoAddon *t) {
     if (logica) linD++; else linT++;
     for (size_t q = j; q < fim; q = addonPula(t->pecas, q)) {
       const char *pc = t->pecas + q;
+      if (*pc == 'S') { estilo = 1; continue; }
+      if (*pc == 'M') { estilo = 2; continue; }
+      if (*pc == 'E') { estilo = 0; continue; }
+      if ((estilo == 1 && minimal) || (estilo == 2 && !minimal)) continue;
       if (*pc == 'I' || *pc == 'B') {
         float lw = *pc == 'I' ? ADDON_ICONE_W : ADDON_BANDEIRA_W;
         if (x > 0 && x + lw - 8 > w) { addonPoe(&v, &k, &cap, cab, 4); if (logica) linD++; else linT++; x = 0; }
@@ -3893,7 +3901,7 @@ static void addonQuebrar(int i, const Stream *s, TextoAddon *t) {
   }
   free(t->vis);
   t->vis = v; t->nVis = k;
-  t->kw0 = w0; t->kw = L; t->kFonte = fonte;
+  t->kw0 = w0; t->kw = L; t->kFonte = fonte; t->kMin = minimal;
   t->linT = linT ? linT : 1; t->linD = linD;
 }
 // Quantos trechos de nome e de descricao a linha `i` tem na largura atual.

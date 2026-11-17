@@ -20,6 +20,9 @@ static void legivel(const char *o, size_t k, char *d, size_t tam) {
     if (o[i] == 'T') { w += snprintf(d + w, tam - w, "[%s]", o + i + 1); i += strlen(o + i + 1) + 2; }
     else if (o[i] == 'I') { w += snprintf(d + w, tam - w, "{%.3s}", o + i + 1); i += 4; }
     else if (o[i] == 'B') { w += snprintf(d + w, tam - w, "<%s>", o + i + 1); i += strlen(o + i + 1) + 2; }
+    else if (o[i] == 'S') { w += snprintf(d + w, tam - w, "(S"); i++; }
+    else if (o[i] == 'M') { w += snprintf(d + w, tam - w, "|M"); i++; }
+    else if (o[i] == 'E') { w += snprintf(d + w, tam - w, ")"); i++; }
     else { fprintf(stderr, "peca invalida em %zu\n", i); exit(1); }
   }
 }
@@ -111,9 +114,28 @@ int main(int argc, char **argv) {
     assert(formatador_icone_em("🕵🏼‍♂️", &len) != det);
     // Bandeiras: par regional, subdivisao, sem PNG volta ao codigo de idioma.
     pecas("🇬🇧 🇧🇷 Dual", o, sizeof o, &k); legivel(o, k, d, sizeof d);
-    if (strcmp(d, "<GB><BR>[Dual]")) { printf("FALHA bandeiras: %s\n", d); ok = 0; }
+    if (strcmp(d, "(S<GB>|M[EN])(S<BR>|M[PT])[Dual]")) { printf("FALHA bandeiras: %s\n", d); ok = 0; }
     pecas("🏴󠁧󠁢󠁥󠁮󠁧󠁿 English", o, sizeof o, &k); legivel(o, k, d, sizeof d);
-    if (strcmp(d, "<GB-ENG>[English]")) { printf("FALHA inglaterra: %s\n", d); ok = 0; }
+    if (strcmp(d, "(S<GB-ENG>|M[EN])[English]")) { printf("FALHA inglaterra: %s\n", d); ok = 0; }
+    // Legenda e audio em texto viram bandeira no Padrao; o Minimalista fica com o texto.
+    {
+      int leg = formatador_icone_em("💬", &len), voz = formatador_icone_em("🗣", &len), dsk = formatador_icone_em("💾", &len);
+      char esp[256];
+      pecas("💬 EN, PT-BR, JA, Commentary", o, sizeof o, &k); legivel(o, k, d, sizeof d);
+      snprintf(esp, sizeof esp, "{%03d}(S<GB><BR><JP>[Commentary]|M[EN, PT-BR, JA, Commentary])", leg);
+      if (strcmp(d, esp)) { printf("FALHA legenda: %s\n", d); ok = 0; }
+      pecas("🗣 English | Portuguese (Brazil) | Latino 💾 4 GB", o, sizeof o, &k); legivel(o, k, d, sizeof d);
+      snprintf(esp, sizeof esp, "{%03d}(S<GB><BR><MX>|M[English | Portuguese (Brazil) | Latino]){%03d}[4 GB]", voz, dsk);
+      if (strcmp(d, esp)) { printf("FALHA audio: %s\n", d); ok = 0; }
+      // Minusculas sao palavras ("it", "no"), e fora de icone de idioma nada muda.
+      pecas("💬 it is fine", o, sizeof o, &k); legivel(o, k, d, sizeof d);
+      snprintf(esp, sizeof esp, "{%03d}[it is fine]", leg);
+      if (strcmp(d, esp)) { printf("FALHA minusculas: %s\n", d); ok = 0; }
+      pecas("💾 EN 4 GB", o, sizeof o, &k); legivel(o, k, d, sizeof d);
+      snprintf(esp, sizeof esp, "{%03d}[EN 4 GB]", dsk);
+      if (strcmp(d, esp)) { printf("FALHA fora de idioma: %s\n", d); ok = 0; }
+      printf("legenda: %s\n", "ok");
+    }
     k = 0; formatador_pecas("🇿🇿 x", strlen("🇿🇿 x"), o, sizeof o, &k, existe); legivel(o, k, d, sizeof d);
     if (strcmp(d, "[ZZ x]")) { printf("FALHA sem png: %s\n", d); ok = 0; }
     // Simbolos do Tamtaro (monocromaticos) viram icone; ★ e ✓ ficam texto.

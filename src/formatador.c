@@ -10,6 +10,24 @@ static const Icone TAB[] = {
 };
 #define N_TAB ((int)(sizeof TAB / sizeof *TAB))
 
+// Idioma -> bandeira, da lista de idiomas do AIOStreams (formatador_idiomas.inc).
+typedef struct { const char *chave, *cc; } Idioma;
+static const Idioma IDIOMAS[] = {
+#include "formatador_idiomas.inc"
+};
+
+// Icones depois dos quais o texto e uma lista de idiomas (legenda ou audio).
+static int iconeDeIdioma(int idx) {
+  static const char *const IC[] = {
+    "\xF0\x9F\x92\xAC", "\xF0\x9F\x93\x9D", "\xF0\x9F\x94\xA4", "\xF0\x9F\xA6\xBB",  // 💬 📝 🔤 🦻
+    "\xF0\x9F\x97\xA3", "\xF0\x9F\x8C\x90", "\xF0\x9F\x8C\x8E", "\xF0\x9F\x8C\x8D",  // 🗣 🌐 🌎 🌍
+    "\xF0\x9F\x8E\x99", "\xF0\x9F\x91\x82", "\xE2\x9A\x90", "\xE2\x9A\x91",              // 🎙 👂 ⚐ ⚑
+    "\xE2\x98\xB0" };                                                                        // ☰
+  if (idx < 0 || idx >= N_TAB) return 0;
+  for (unsigned i = 0; i < sizeof IC / sizeof *IC; i++) if (!strcmp(TAB[idx].utf8, IC[i])) return 1;
+  return 0;
+}
+
 int formatador_icones_n(void) { return N_TAB; }
 
 // Mesmo decodificador estrito de limpa.c: sequencia invalida = U+FFFD, 1 byte.
@@ -131,32 +149,140 @@ static int poe(char *out, size_t cap, size_t *k, const char *rec, size_t n) {
   out[*k] = 0;
   return 1;
 }
+static int poeTexto(char *out, size_t cap, size_t *k, char tipo, const char *t, size_t l) {
+  if (*k + l + 3 > cap) return 0;
+  out[(*k)++] = tipo;
+  memcpy(out + *k, t, l);
+  *k += l;
+  out[(*k)++] = 0;
+  out[*k] = 0;
+  return 1;
+}
+
+// UM ITEM DE IDIOMA -> pais da bandeira, ou NULL. Codigo (EN, PT-BR, JPN,
+// ES-419) so em MAIUSCULAS, como os formatadores escrevem: "it", "no" e "is"
+// minusculos sao palavras. Nome (English, Portuguese (Brazil), Latino) sem
+// diferenca de caixa.
+static const char *idiomaPais(const char *w, size_t n) {
+  char k[48];
+  int maius = 1, letras = 0;
+  size_t i;
+  if (!n || n >= sizeof k) return NULL;
+  for (i = 0; i < n; i++) {
+    unsigned char c = (unsigned char)w[i];
+    if (c >= 0x80) return NULL;
+    if (c >= 'a' && c <= 'z') { maius = 0; letras++; }
+    else if (c >= 'A' && c <= 'Z') letras++;
+    k[i] = (char)(c >= 'A' && c <= 'Z' ? c + 32 : c);
+  }
+  k[n] = 0;
+  if (!letras) return NULL;
+  {
+    size_t base = strcspn(k, "-_");
+    if (base <= 3 && !maius) return NULL;   // "en", "it": palavra, nao codigo
+  }
+  for (i = 0; i < n; i++) if (k[i] == '_') k[i] = '-';
+  {
+    int lo = 0, hi = (int)(sizeof IDIOMAS / sizeof *IDIOMAS) - 1;
+    while (lo <= hi) {
+      int m = (lo + hi) / 2, c = strcmp(k, IDIOMAS[m].chave);
+      if (!c) return IDIOMAS[m].cc;
+      if (c < 0) hi = m - 1; else lo = m + 1;
+    }
+  }
+  return NULL;
+}
+
+// Separador de itens numa lista de idiomas.
+static size_t sepIdioma(const char *p) {
+  if (*p == ',' || *p == '|' || *p == '/' || *p == ';' || *p == '+' || *p == '&') return 1;
+  if (!strncmp(p, "\xC2\xB7", 2)) return 2;          // ·
+  if (!strncmp(p, "\xE2\x80\xA2", 3)) return 3;      // •
+  return 0;
+}
+
+// Texto limpo depois de um icone de legenda/audio: os idiomas viram bandeira no
+// Padrao. Escreve "S" + pecas do Padrao + "M" + o texto como veio + "E"; sem
+// nenhum idioma reconhecido, nada (devolve 0) e o chamador poe o texto comum.
+static int idiomas(const char *limpo, char *out, size_t cap, size_t *k,
+                   int (*existe)(const char *cc)) {
+  size_t k0 = *k, l = strlen(limpo);
+  const char *p = limpo;
+  int bandeiras = 0;
+  char pend[2048];
+  size_t np = 0;
+  if (!poe(out, cap, k, "S", 1)) goto cheio;
+  while (*p) {
+    size_t s, n;
+    const char *f = p, *cc;
+    while (*p == ' ') p++;
+    f = p;
+    while (*f && !sepIdioma(f)) f++;
+    n = (size_t)(f - p);
+    while (n && p[n - 1] == ' ') n--;
+    // O item inteiro ("Portuguese (Brazil)", "PT-BR"), ou palavra a palavra
+    // ("EN PT JA"); o que nao e idioma fica texto ("Commentary", "Multi").
+    cc = n ? idiomaPais(p, n) : NULL;
+    if (cc && (!existe || existe(cc))) {
+      if (np) { if (!poeTexto(out, cap, k, 'T', pend, np)) goto cheio; np = 0; }
+      if (!poeTexto(out, cap, k, 'B', cc, strlen(cc))) goto cheio;
+      bandeiras++;
+    } else {
+      const char *w = p, *fim = p + n;
+      while (w < fim) {
+        const char *e = w;
+        while (e < fim && *e != ' ') e++;
+        cc = idiomaPais(w, (size_t)(e - w));
+        if (cc && (!existe || existe(cc))) {
+          if (np) { if (!poeTexto(out, cap, k, 'T', pend, np)) goto cheio; np = 0; }
+          if (!poeTexto(out, cap, k, 'B', cc, strlen(cc))) goto cheio;
+          bandeiras++;
+        } else if (e > w && np + (size_t)(e - w) + 2 < sizeof pend) {
+          if (np) pend[np++] = ' ';
+          memcpy(pend + np, w, (size_t)(e - w)); np += (size_t)(e - w);
+        }
+        w = e;
+        while (w < fim && *w == ' ') w++;
+      }
+    }
+    p = f;
+    if ((s = sepIdioma(p))) {
+      // separador entre dois textos fica; entre bandeiras some
+      if (np && np + s + 3 < sizeof pend) { pend[np++] = ' '; memcpy(pend + np, p, s); np += s; }
+      p += s;
+    }
+  }
+  while (np && (pend[np - 1] == ' ' || sepIdioma(pend + np - 1))) np--;
+  if (np && !poeTexto(out, cap, k, 'T', pend, np)) goto cheio;
+  if (!bandeiras) { *k = k0; out[*k] = 0; return 0; }
+  if (!poe(out, cap, k, "M", 1) || !poeTexto(out, cap, k, 'T', limpo, l) || !poe(out, cap, k, "E", 1)) goto cheio;
+  return 1;
+cheio:
+  *k = k0; out[*k] = 0;
+  return -1;
+}
 
 // Texto entre dois icones -> uma peca 'T' limpa (ou nada, se so tinha enfeite).
-static int texto(const char *ini, size_t n, char *out, size_t cap, size_t *k) {
+// `idioma`: veio depois de um icone de legenda/audio (ver idiomas()).
+static int texto(const char *ini, size_t n, char *out, size_t cap, size_t *k, int idioma,
+                 int (*existe)(const char *cc)) {
   char cru[2048], limpo[2048];
+  int r;
   if (!n) return 1;
   if (n >= sizeof cru) n = sizeof cru - 1;
   memcpy(cru, ini, n); cru[n] = 0;
   nv_limpar_texto(cru, limpo, sizeof limpo, NV_LIMPA_UMA_LINHA);
   nv_aparar_separadores(limpo);
   if (!limpo[0]) return 1;
-  {
-    size_t l = strlen(limpo);
-    if (*k + l + 3 > cap) return -1;
-    out[(*k)++] = 'T';
-    memcpy(out + *k, limpo, l + 1);
-    *k += l + 1;
-    out[*k] = 0;
-  }
-  return 2;
+  if (idioma && (r = idiomas(limpo, out, cap, k, existe)) != 0) return r < 0 ? -1 : 2;
+  return poeTexto(out, cap, k, 'T', limpo, strlen(limpo)) ? 2 : -1;
 }
 
 int formatador_pecas(const char *in, size_t n, char *out, size_t cap, size_t *k,
                      int (*bandeira_existe)(const char *cc)) {
   char linha[4096];
   size_t i = 0, seg = 0;
-  int pecas = 0, r;
+  int pecas = 0, r, idioma = 0;
   if (!in || !out || !k || *k >= cap) return 0;
   if (n >= sizeof linha) n = sizeof linha - 1;
   memcpy(linha, in, n); linha[n] = 0;
@@ -167,12 +293,20 @@ int formatador_pecas(const char *in, size_t n, char *out, size_t cap, size_t *k,
     size_t lb = ic < 0 && (unsigned char)linha[i] == 0xF0 ? bandeiraEm((const unsigned char *)linha + i, cc) : 0;
     if (lb && bandeira_existe && !bandeira_existe(cc)) lb = 0;
     if (ic >= 0 || lb) {
-      if ((r = texto(linha + seg, i - seg, out, cap, k)) < 0) return pecas;
+      if ((r = texto(linha + seg, i - seg, out, cap, k, idioma, bandeira_existe)) < 0) return pecas;
       pecas += r == 2;
-      if (ic >= 0) { snprintf(rec, sizeof rec, "I%03d", ic); if (!poe(out, cap, k, rec, 4)) return pecas; }
-      else {
-        size_t l = (size_t)snprintf(rec, sizeof rec, "B%s", cc);
-        if (!poe(out, cap, k, rec, l + 1)) return pecas;   // +1: leva o '\0'
+      if (ic >= 0) {
+        snprintf(rec, sizeof rec, "I%03d", ic);
+        if (!poe(out, cap, k, rec, 4)) return pecas;
+        idioma = iconeDeIdioma(ic);
+      } else {
+        // Padrao: a bandeira. Minimalista: o codigo de idioma de sempre ("EN").
+        char cod[4];
+        size_t k0 = *k;
+        const char *id = nv_bandeira_idioma(cc, cod);
+        if (!poe(out, cap, k, "S", 1) || !poeTexto(out, cap, k, 'B', cc, strlen(cc)) ||
+            !poe(out, cap, k, "M", 1) || !poeTexto(out, cap, k, 'T', id, strlen(id)) ||
+            !poe(out, cap, k, "E", 1)) { *k = k0; out[*k] = 0; return pecas; }
         i += lb;
         // VS16 colado na bandeira (raro, mas acontece em copia de texto).
         while (i < n) { int m; unsigned long c = dec((const unsigned char *)linha + i, &m); if (!ehVS(c)) break; i += (size_t)m; }
@@ -185,6 +319,6 @@ int formatador_pecas(const char *in, size_t n, char *out, size_t cap, size_t *k,
     }
     { int m; dec((const unsigned char *)linha + i, &m); i += (size_t)m; }
   }
-  if ((r = texto(linha + seg, i - seg, out, cap, k)) == 2) pecas++;
+  if ((r = texto(linha + seg, i - seg, out, cap, k, idioma, bandeira_existe)) == 2) pecas++;
   return pecas;
 }
