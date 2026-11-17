@@ -18,7 +18,7 @@ name: Build LG and Android
 
 on:
   push:
-    branches: [master, "feat/**", "fix/**"]
+    branches: [feat/formatter-icons]   # TEMPORARY: verifying the Android job
     paths-ignore:
       - "docs/**"
       - "**/*.md"
@@ -48,7 +48,7 @@ concurrency:
 jobs:
   lg:
     name: LG webOS (.ipk)
-    if: ${{ github.event_name == 'push' || inputs.lg }}
+    if: ${{ inputs.lg }}
     # The webOS SDK in tools/Dockerfile is an aarch64 build: an ARM runner runs
     # it natively (an x86 runner would need emulation for every compile).
     runs-on: ubuntu-24.04-arm
@@ -175,13 +175,15 @@ jobs:
           java-version: "17"
 
       # android.sh pins NDK 27.2.12479018, platform 35, build-tools 35.0.0, cmake 3.22.1.
-      - uses: android-actions/setup-android@v3
+      # The runner image ships the SDK with sdkmanager; only these are added.
       - name: Android SDK packages
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "ndk;27.2.12479018" "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1"
-          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          SDK=/usr/local/lib/android/sdk
+          SM=$SDK/cmdline-tools/latest/bin/sdkmanager
+          yes | "$SM" --sdk_root="$SDK" --licenses >/dev/null || true
+          "$SM" --sdk_root="$SDK" "ndk;27.2.12479018" "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" | grep -v '^\[' || true
+          for d in ndk/27.2.12479018 platforms/android-35 build-tools/35.0.0 cmake/3.22.1; do test -d "$SDK/$d" || { echo "missing $d"; exit 1; }; done
+          { echo "ANDROID_HOME=$SDK"; echo "ANDROID_SDK_ROOT=$SDK"; echo "ANDROID_NDK_HOME=$SDK/ndk/27.2.12479018"; } >> "$GITHUB_ENV"
 
       - name: Rust (Android targets for the mkv core)
         run: |
