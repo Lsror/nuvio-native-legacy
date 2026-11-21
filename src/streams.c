@@ -3897,6 +3897,48 @@ static float addonColuna(const Stream *s) {
   w = (float)txt_largura(TXT_PG_FIM, pv);
   return (w > 340.0f ? 340.0f : w) + 28.0f;
 }
+// Largura da 1a palavra de `r`: ate o 1o espaco, ou ate (e com) o 1o ponto em
+// que addonCorte quebraria. Palavra maior que o buffer e cortada no comeco de
+// um caractere, para nao medir meio UTF-8 (CJK sem espaco passa de 255 bytes);
+// a essa altura ela ja e mais larga que qualquer linha.
+static float addonPalavra(TxtEstilo est, const char *r) {
+  char pal[256];
+  size_t n = 0;
+  while (r[n] && n + 1 < sizeof pal && r[n] != ' ') {
+    pal[n] = r[n];
+    if (addonQuebraEm(r[n++])) break;
+  }
+  while (n > 0 && ((unsigned char)r[n] & 0xC0) == 0x80) n--;
+  pal[n] = 0;
+  return (float)txt_largura(est, pal);
+}
+// O que vem depois do icone/bandeira em `q`, ate o fim da linha logica:
+// `run` = largura dos icones e bandeiras colados a ele (★★★★☆, 🔊 🇬🇧);
+// `pal` = a 1a palavra do texto que vem depois (ate o 1o ponto em que
+// addonCorte quebraria), `tudo` = esse texto inteiro. Devolve 1 quando ha
+// texto depois da sequencia, 0 quando ela termina a linha logica.
+typedef struct { float run, pal, tudo; } AddonDepois;
+static int addonDepois(const char *p, size_t q, size_t fim, int estilo, int minimal,
+                       TxtEstilo est, AddonDepois *d) {
+  d->run = d->pal = d->tudo = 0;
+  for (q = addonPula(p, q); q < fim; q = addonPula(p, q)) {
+    const char *pc = p + q;
+    if (*pc == 'S') { estilo = 1; continue; }
+    if (*pc == 'M') { estilo = 2; continue; }
+    if (*pc == 'E') { estilo = 0; continue; }
+    if ((estilo == 1 && minimal) || (estilo == 2 && !minimal)) continue;
+    if (*pc == 'I') {
+      if (addonIcone(atoi((char[4]){ pc[1], pc[2], pc[3], 0 }), minimal, NULL)) d->run += ADDON_ICONE_W;
+      continue;
+    }
+    if (*pc == 'B') { d->run += ADDON_BANDEIRA_W; continue; }
+    if (*pc != 'T') return 0;
+    d->pal = addonPalavra(est, pc + 1);
+    d->tudo = (float)txt_largura(est, pc + 1);
+    return 1;
+  }
+  return 0;
+}
 static void addonQuebrar(int i, const Stream *s, TextoAddon *t) {
   float L = addonLargura > 0 ? addonLargura
           : FOLHA_W - FOLHA_PAD_E - FOLHA_PAD_D - 2 * FOLHA_TXT;
@@ -3920,6 +3962,9 @@ static void addonQuebrar(int i, const Stream *s, TextoAddon *t) {
     size_t fim = j;
     TxtEstilo est = logica ? TXT_PG_FIM : TXT_CALLOUT;
     float w = logica ? L : w0, x = 0;
+    int temTexto = 0;   // a linha visual ja tem texto (ou so icones/bandeiras)
+#define ADDON_NOVA_LINHA() do { addonPoe(&v, &k, &cap, cab, 4); if (logica) linD++; \
+                                else { linT++; w = wNome2; } x = 0; temTexto = 0; } while (0)
     char cab[8];
     while (fim < t->nPecas && t->pecas[fim] != '\n') fim = addonPula(t->pecas, fim);
     snprintf(cab, sizeof cab, "V%03d", logica > 999 ? 999 : logica);
@@ -3935,7 +3980,27 @@ static void addonQuebrar(int i, const Stream *s, TextoAddon *t) {
         continue;   // sem PNG em nenhum estilo: nem lugar ocupa (ver addonIcone)
       if (*pc == 'I' || *pc == 'B') {
         float lw = *pc == 'I' ? ADDON_ICONE_W : ADDON_BANDEIRA_W;
-        if (x > 0 && x + lw - 8 > w) { addonPoe(&v, &k, &cap, cab, 4); if (logica) linD++; else { linT++; w = wNome2; } x = 0; }
+        // O icone vai junto com o que ele rotula: a sequencia de icones e
+        // bandeiras colados a ele e a 1a palavra do texto seguinte. Se essa
+        // unidade nao cabe no resto da linha (no texto: a palavra nao cabe, ou
+        // sobram menos de 80 px, quando ele quebraria de qualquer jeito), o
+        // icone ja comeca a linha de baixo em vez de ficar sozinho no fim
+        // desta. So quando a unidade cabe na linha de baixo: uma fileira de
+        // bandeiras mais larga que a linha (muitos idiomas) so corre e enche
+        // cada linha — senao cada bandeira desceria sozinha, uma por linha.
+        // Palavra mais larga que a linha toda nao conta: ela vai cortada ao
+        // lado do icone (ver `temTexto` abaixo).
+        AddonDepois d;
+        int texto = addonDepois(t->pecas, q, fim, estilo, minimal, est, &d);
+        float xt = x + lw + d.run;   // onde o texto comecaria
+        float wBaixo = logica ? L : wNome2;
+        float unidade = lw + d.run + (!texto ? -8.0f : d.pal <= wBaixo ? d.pal : 0.0f);
+        // E so com texto antes na linha: numa linha so de icones eles sao a
+        // mesma fileira, e descer partiria a fileira em vez de junta-la.
+        int sozinho = temTexto && unidade <= wBaixo &&
+                      (texto ? xt + d.tudo > w && (xt + d.pal > w || w - xt < 80.0f)
+                             : d.run > 0 && xt - 8 > w);
+        if (x > 0 && (x + lw - 8 > w || sozinho)) { ADDON_NOVA_LINHA(); }
         addonPoe(&v, &k, &cap, pc, *pc == 'I' ? 4 : strlen(pc) + 1);
         x += lw;
         continue;
@@ -3943,19 +4008,25 @@ static void addonQuebrar(int i, const Stream *s, TextoAddon *t) {
       const char *r = pc + 1;
       while (*r) {
         float lw = (float)txt_largura(est, r);
-        if (x + lw <= w) { addonPoe(&v, &k, &cap, "T", 1); addonPoe(&v, &k, &cap, r, strlen(r) + 1); x += lw + ADDON_GAP; break; }
+        if (x + lw <= w) { addonPoe(&v, &k, &cap, "T", 1); addonPoe(&v, &k, &cap, r, strlen(r) + 1); x += lw + ADDON_GAP; temTexto = 1; break; }
         int meio = 0;
         size_t c = x > 0 && w - x < 80.0f ? 0 : addonCorte(est, r, w - x, x <= 0, &meio);
         // Pouco espaco sobrando, ou a palavra nao cabe inteira no resto da
         // linha ("TAMTAR|O", "TrueH|D"): ela comeca na linha de baixo. Cortar
-        // dentro da palavra so quando ela sozinha passa da linha toda.
+        // dentro da palavra so quando ela sozinha passa da linha toda — e
+        // entao ja aqui se a linha so tem icones: ela seria cortada na linha
+        // de baixo de todo jeito, e os icones ficariam sozinhos nesta.
+        if (x > 0 && !temTexto && (!c || meio) && addonPalavra(est, r) > (logica ? L : wNome2)) {
+          c = addonCorte(est, r, w - x, 0, &meio);
+          meio = 0;
+        }
         if (x > 0 && (!c || meio)) {
-          addonPoe(&v, &k, &cap, cab, 4); if (logica) linD++; else { linT++; w = wNome2; } x = 0; continue;
+          ADDON_NOVA_LINHA(); continue;
         }
         size_t ce = c;
         while (ce > 0 && r[ce - 1] == ' ') ce--;
-        if (ce) { addonPoe(&v, &k, &cap, "T", 1); addonPoe(&v, &k, &cap, r, ce); addonPoe(&v, &k, &cap, "", 1); }
-        addonPoe(&v, &k, &cap, cab, 4); if (logica) linD++; else { linT++; w = wNome2; } x = 0;
+        if (ce) { addonPoe(&v, &k, &cap, "T", 1); addonPoe(&v, &k, &cap, r, ce); addonPoe(&v, &k, &cap, "", 1); temTexto = 1; }
+        ADDON_NOVA_LINHA();
         r += c;
         while (*r == ' ') r++;
       }
@@ -3967,6 +4038,7 @@ static void addonQuebrar(int i, const Stream *s, TextoAddon *t) {
   t->vis = v; t->nVis = k;
   t->kw0 = w0; t->kw = L; t->kFonte = fonte; t->kMin = minimal;
   t->linT = linT ? linT : 1; t->linD = linD;
+#undef ADDON_NOVA_LINHA
 }
 // Quantos trechos de nome e de descricao a linha `i` tem na largura atual.
 static void addonLinhas(int i, int *linT, int *linD) {
