@@ -3667,6 +3667,7 @@ static int linhaAnt = -1, focoVisto = -1;
 #define FOLHA_ADDON_FECHADA 2
 #define FOLHA_ADDON_LD     28.0f
 #define FOLHA_ADDON_TD     40.0f    // altura de cada trecho do nome
+#define FOLHA_ADDON_SELOS  36.0f    // fileira de selos (Ajustes: Badge position)
 #define ADDON_ICONE_W      30.0f    // 22 de icone + 8
 #define ADDON_BANDEIRA_W   36.0f    // 28 de bandeira (4:3) + 8
 #define ADDON_GAP          18.0f    // depois de cada texto
@@ -3944,8 +3945,11 @@ static void addonQuebrar(int i, const Stream *s, TextoAddon *t) {
           : FOLHA_W - FOLHA_PAD_E - FOLHA_PAD_D - 2 * FOLHA_TXT;
   // So a 1a linha do nome divide espaco com a coluna do addon (uma linha de
   // altura); da 2a em diante o nome usa a largura toda, menos o raio de cache.
+  // Com os selos em cima, quem fica ao lado da coluna e a fileira de selos:
+  // o nome inteiro usa a largura toda. (kw0 guarda w0: trocar o ajuste refaz
+  // a quebra.)
   float wNome2 = L - (cacheConfirmado(s) ? 30.0f : 0.0f);
-  float w0 = L - addonColuna(s) - (cacheConfirmado(s) ? 30.0f : 0.0f);
+  float w0 = ajustes_selos_embaixo() ? L - addonColuna(s) - (cacheConfirmado(s) ? 30.0f : 0.0f) : wNome2;
   int fonte = (int)txt_fonte_interface();
   // O estilo muda a largura (bandeira no Padrao, "EN" no Minimalista): as
   // pecas de um estilo so entram na quebra dele (blocos S..M..E).
@@ -4577,7 +4581,9 @@ static float alturaLinha(int i, int automatica, float abertura) {
     // acontece no desenho (addonLinhas tem cache por largura).
     int linT = 1, linD = textoAddonDa(i)->nl;
     if (abertura > .001f || linD < FOLHA_ADDON_FECHADA) addonLinhas(i, &linT, &linD);
-    h = 20 + addonAlturaNome(linT, abertura) + addonLinhasDesc(linD, abertura) * FOLHA_ADDON_LD + 18 +
+    // A fileira de selos tem lugar fixo em toda linha (em cima ou embaixo):
+    // o pacote chega depois, no fio, e a linha nao muda de altura com ele.
+    h = 20 + FOLHA_ADDON_SELOS + addonAlturaNome(linT, abertura) + addonLinhasDesc(linD, abertura) * FOLHA_ADDON_LD + 18 +
         (temMarca(i, automatica) ? FOLHA_MARCA_H : 0);
     if (h < 96) h = 96;
     // Sem as linhas "Audio:" / "Legendas:" do app: o formatador ja escreve os
@@ -6105,6 +6111,22 @@ static float trocaEase(Uint32 agora) {
   if(ajustes_animacoes_reduzidas()||t>=1.0f) return 1.0f;
   t=1.0f-t; return 1.0f-t*t*t;
 }
+// SELOS NO MODO "DO ADDON" (as linhas do 2.0.8.x): a fileira inteira do
+// pacote escolhido, ou os logos do app quando nao ha pacote, com a resolucao
+// (o grupo da folha nao aparece no texto do addon). Mesma regra das linhas
+// "Do Nuvio": o pacote assim que o fio dos selos o casou (selosPacoteDa),
+// ate la os logos do app.
+static void addonSelos(const Stream *s, float x, float y, float w, int sel, float anim) {
+  if(selosPacoteDa((Stream *)s)>0)
+    desenharSelosPacote(s,x,y,w,FOLHA_SELO_H,anim*(sel || selospacote_ativo()>=0?1:.85f),sel?1:.85f,0);
+  else {
+    uint64_t mask=logosDa(s,0) | (s->badges & (badges_bit("r-4k")|badges_bit("r-1080")|badges_bit("r-720")|badges_bit("r-sd")));
+    float usado=ajustes_selos_coloridos() ? badges_desenhar_selos(mask,x,y,w,FOLHA_SELO_H,anim) :
+      badges_desenhar_tom(mask,x,y,w,FOLHA_SELO_H,.85f,.85f,.85f,anim);
+    if(!s->dolbyVision && badges_fonte_hdr_marca(s->badges)<0 && usado+64<w)
+      marca_formato(FMT_SDR,x+usado+(usado?12:0),y,FOLHA_SELO_H,.7f,.7f,.7f,anim);
+  }
+}
 static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
   float ar, ag, ab;
   int ai, nf, automatica, melhor;
@@ -6435,15 +6457,23 @@ static void corpoFolha(float x, float w, float anim, Uint32 agora, int ilha) {
     // texto) e QUEBRAM: a linha em foco mostra tudo (addonDesenhar).
     if(ajustes_fonte_texto_addon()) {
       int apagada=s->naoVideo || (!canalFolha && stream_vod_falhou_ha(i) >= 0);
+      int selosEmbaixo=ajustes_selos_embaixo();
+      // Em cima: na altura da coluna da direita, na largura que ela deixa.
+      if(!selosEmbaixo) { addonSelos(s,tx,cy+(FOLHA_ADDON_SELOS-FOLHA_SELO_H)*.5f,txtW,sel,anim); cy+=FOLHA_ADDON_SELOS; }
       float cacheW=desenharCache(s,tx,cy,anim*(sel?1.0f:.8f));
       // abertura da linha: a mesma mola da altura (alturaLinha)
       float abr = grupo==1 && row==foco ? abreFoco : row==linhaAnt ? abreAnt : 0.0f;
       int linT, linD;
       tira=0;
       addonLinhas(i,&linT,&linD);
-      addonDesenhar(i,0,tx+cacheW,cy,txtW-cacheW,(tr-tx)-cacheW,sel,apagada,abr,anim);
+      // A mesma largura da quebra (addonQuebrar): em cima, a coluna fica ao
+      // lado dos selos e a 1a linha do nome vai ate a borda.
+      addonDesenhar(i,0,tx+cacheW,cy,(selosEmbaixo?txtW:tr-tx)-cacheW,(tr-tx)-cacheW,sel,apagada,abr,anim);
       cy+=addonAlturaNome(linT,abr);   // sem desenharFaixas: ver alturaLinha
       addonDesenhar(i,1,tx,cy,tr-tx,tr-tx,sel,apagada,abr,anim);
+      // Embaixo: depois da descricao a mostra (a mesma mola da altura).
+      if(selosEmbaixo)
+        addonSelos(s,tx,cy+addonLinhasDesc(linD,abr)*FOLHA_ADDON_LD+(FOLHA_ADDON_SELOS-FOLHA_SELO_H)*.5f,tr-tx,sel,anim);
       continue;
     }
     { char nome[96];
