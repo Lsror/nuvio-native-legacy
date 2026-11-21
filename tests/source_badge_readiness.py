@@ -7,7 +7,6 @@ import tempfile
 
 root = Path(__file__).resolve().parents[1]
 source = (root / "src/streams.c").read_text()
-draw = (root / "src/stream_formatter_draw.inc").read_text()
 
 
 def function(signature):
@@ -83,9 +82,8 @@ static int badges_fonte_hdr_marca(unsigned long long m){(void)m;return 1;}
 enum {FMT_SDR};
 #define FOLHA_SELO_H 24
 static void marca_formato(int f,float x,float y,float h,float r,float g,float b,float a){(void)f;(void)x;(void)y;(void)h;(void)r;(void)g;(void)b;(void)a;}
-static void drawRow(Stream *s){float tx=0,y=0,bw=800,anim=1;int sel=1;
 @DRAW@
-}
+static void drawRow(Stream *s){addonSelos(s,0,0,800,1,1);}
 static SelosLote *job(int count){SelosLote *l=calloc(1,sizeof *l);assert(l);l->ger=listaGeracao;l->ver=version;l->k=count;return l;}
 int main(void){
  int ready=9;strcpy(rows[0].url,"a");strcpy(rows[0].rotulo,"one");rows[0].badges=1;
@@ -164,9 +162,8 @@ fixture = fixture.replace("@IMAGES@", function("static int selosImagensProntas("
 view_start=source.index("enum { SELOS_VISTA_PENDENTE")
 view_end=source.index("static float desenharSelosPacote(",view_start)
 fixture=fixture.replace("@VIEW@",source[view_start:view_end])
-start = draw.index("  int badgeView=selosVistaDa(")
-end = draw.index("  y=titleY;", start)
-fixture = fixture.replace("@DRAW@", draw[start:end])
+# From addon badge row (feat/formatter-icons has no 2.0.8.x card file).
+fixture = fixture.replace("@DRAW@", function("static void addonSelos("))
 with tempfile.TemporaryDirectory(prefix="nuvio-badge-ready-") as directory:
     temp = Path(directory)
     (temp / "test.c").write_text(fixture)

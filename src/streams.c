@@ -6272,12 +6272,13 @@ static float trocaEase(Uint32 agora) {
 // SELOS NO MODO "DO ADDON" (as linhas do 2.0.8.x): a fileira inteira do
 // pacote escolhido, ou os logos do app quando nao ha pacote, com a resolucao
 // (o grupo da folha nao aparece no texto do addon). Mesma regra das linhas
-// "Do Nuvio": o pacote assim que o fio dos selos o casou (selosPacoteDa),
-// ate la os logos do app.
+// "Do Nuvio" (selosVistaDa): ate o pacote ficar pronto a fileira fica vazia,
+// sem trocar de estilo no meio da pagina; sem pacote, os logos do app.
 static void addonSelos(const Stream *s, float x, float y, float w, int sel, float anim) {
-  if(selosPacoteDa((Stream *)s)>0)
+  int vista=selosVistaDa((Stream *)s,0);
+  if(vista==SELOS_VISTA_PACOTE)
     desenharSelosPacote(s,x,y,w,FOLHA_SELO_H,anim*(sel || selospacote_ativo()>=0?1:.85f),sel?1:.85f,0);
-  else {
+  else if(vista==SELOS_VISTA_LEGADO) {
     uint64_t mask=logosDa(s,0) | (s->badges & (badges_bit("r-4k")|badges_bit("r-1080")|badges_bit("r-720")|badges_bit("r-sd")));
     float usado=ajustes_selos_coloridos() ? badges_desenhar_selos(mask,x,y,w,FOLHA_SELO_H,anim) :
       badges_desenhar_tom(mask,x,y,w,FOLHA_SELO_H,.85f,.85f,.85f,anim);
