@@ -56,7 +56,8 @@ static void record(GfxRect r,float red,float green,float blue,float alpha,int ic
  snprintf(d.name,sizeof d.name,"%s",name);visible[visibleCount++]=d;
 }
 static int gfx_icone_cor(GfxRect r,const char *name,float alpha){record(r,1,1,1,alpha,2,name);return 1;}
-static void gfx_icone(GfxRect r,const char *name,float red,float green,float blue,float alpha){record(r,red,green,blue,alpha,1,name);}
+__attribute__((unused)) static void gfx_icone(GfxRect r,const char *name,float red,float green,float blue,float alpha){record(r,red,green,blue,alpha,1,name);}
+static void gfx_icone_fmt(GfxRect r,const char *name,float red,float green,float blue,float alpha){record(r,red,green,blue,alpha,3,name);}
 static TxtLinha txt_linha_corta(int style,const char *t,int r,int g,int b,int a,float max){
  (void)r;(void)g;(void)b;(void)a;lookups++;
  return (TxtLinha){(int)fminf(max,(float)strlen(t)*7),style==TXT_CALLOUT?fontHeight+8:fontHeight};

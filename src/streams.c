@@ -4136,7 +4136,7 @@ static void addonDesenhar(int i, int secao, float tx, float y, float maxw, float
       if (!nome) { q = addonPula(t->vis, q); continue; }
       // Emoji em cores fora do foco: um degrau mais apagado, como o texto.
       if (cor) gfx_icone_cor((GfxRect){x, iy, 22, 22}, nome, ak * (sel ? 1.0f : .8f));
-      else gfx_icone((GfxRect){x, iy, 22, 22}, nome, c / 255.0f, c / 255.0f, c / 255.0f, ak);
+      else gfx_icone_fmt((GfxRect){x, iy, 22, 22}, nome, c / 255.0f, c / 255.0f, c / 255.0f, ak);
       x += ADDON_ICONE_W;
     } else if (*pc == 'B') {
       char nome[32];

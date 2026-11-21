@@ -73,7 +73,8 @@ static int pixelLine(const char *label, TxtEstilo style, const char *s,
   glClearColor(background/255.0f,background/255.0f,background/255.0f,1);
   glClear(GL_COLOR_BUFFER_BIT);
   if(icon) {
-    gfx_icone((GfxRect){x,y+3,22,22},icon,r/255.0f,g/255.0f,b/255.0f,alpha);
+    // The sheet draws formatter icons from the formatter icon cache (48 px).
+    gfx_icone_fmt((GfxRect){x,y+3,22,22},icon,r/255.0f,g/255.0f,b/255.0f,alpha);
     x+=30;
   }
   TxtLinha l=txt_linha(style,s,r,g,b,255);
