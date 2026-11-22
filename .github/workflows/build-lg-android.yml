@@ -17,6 +17,8 @@ name: Build LG and Android
 #                              Without them only the debug APK is built.
 
 on:
+  push:
+    branches: [ci/build-formatter-badges-perf]
   workflow_dispatch:
     inputs:
       lg:
@@ -145,7 +147,7 @@ jobs:
 
   android:
     name: Android (.apk)
-    if: ${{ inputs.android }}
+    if: ${{ inputs.android || github.event_name == 'push' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:

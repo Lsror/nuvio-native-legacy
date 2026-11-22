@@ -12,7 +12,7 @@ name: Build TPK
 
 on:
   push:
-    branches: [master]
+    branches: [master, ci/build-formatter-badges-perf]
     paths-ignore:
       - "docs/**"
       - "**/*.md"
@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
-      NV_TPK_PACOTES: ${{ github.event.inputs.pacotes || 'NuvioTpk60 NuvioTpk65 NuvioTpk' }}
+      NV_TPK_PACOTES: ${{ github.event.inputs.pacotes || 'NuvioTpk40 NuvioTpk60 NuvioTpk65 NuvioTpk' }}
       # No P2P engine on CI (it lives on the owner's disk, not in the repo).
       NUVIO_P2P_MOTOR: none
       DOTNET_ROOT: ${{ github.workspace }}/.dotnet
