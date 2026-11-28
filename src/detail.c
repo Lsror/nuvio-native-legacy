@@ -97,6 +97,7 @@ static TituloTempo detalheTempo;
 #include "amigostitulo_ui.h"
 #include "temporadas_grafico.h"
 #include "detrotulo.h"
+#include "proximo.h"
 static void ponteiroDetalhe(int r, int c);   // ponteiro do Magic Remote (#99)
 static int moverFileira(int dy);
 static void heroReiniciar(void);
@@ -1957,6 +1958,46 @@ int detail_relogio_navegavel(void) {
 // por baixo da folha ate ser coberta.
 float detail_progresso(void) { return aberto && !carro ? suave(t) : 0.0f; }
 
+// The episode after the last one watched, in watch order. The list is not
+// kept in that order, so both are searched for. Episodes not aired yet are
+// left out: caught up on a show still airing, Play would open one with no
+// sources. One without a date counts as aired.
+//
+// It also runs on the early list (epsParciais), before the add-on's final
+// list arrives. On a show whose add-on list renumbers the seasons (anime:
+// Bleach's Thousand-Year Blood War is S2 in the early list and S17 in the
+// final one), marks numbered for one list can point at other episodes in
+// the other, and Play may show a wrong episode until the final list
+// replaces the early one.
+static int proximoDosVistos(const CatItem *ci, int *temp, int *epis) {
+  const CatEp *ultimo = NULL, *prox = NULL;
+  int n = vistoep_conhecido(ci->imdb) ? cat_n_episodios(idx) : 0, i;
+  long long agora = (long long)time(NULL) * 1000LL;
+  for (i = 0; i < n; i++) {
+    const CatEp *x = cat_episodio(idx, i);
+    if (!x || x->temporada <= 0 || x->episodio <= 0 ||
+        vistoep_estado(ci->imdb, x->temporada, x->episodio) != 1) continue;
+    if (!ultimo || x->temporada > ultimo->temporada ||
+        (x->temporada == ultimo->temporada && x->episodio > ultimo->episodio))
+      ultimo = x;
+  }
+  for (i = 0; ultimo && i < n; i++) {
+    const CatEp *x = cat_episodio(idx, i);
+    if (!x || x->temporada <= 0 || x->episodio <= 0 ||
+        x->temporada < ultimo->temporada ||
+        (x->temporada == ultimo->temporada && x->episodio <= ultimo->episodio)) continue;
+    { long long estreia = prox_episodio_data_ms(x);
+      if (estreia != PROX_SEM_DATA && estreia > agora) continue; }
+    if (!prox || x->temporada < prox->temporada ||
+        (x->temporada == prox->temporada && x->episodio < prox->episodio))
+      prox = x;
+  }
+  if (!prox) return 0;
+  if (temp) *temp = prox->temporada;
+  if (epis) *epis = prox->episodio;
+  return 1;
+}
+
 // Temporada e episodio EM FOCO, para quem for pedir fonte.
 //
 // Sem isto o addons_buscar recebia so o imdb da serie e cravava ":1:1" — e por
@@ -1994,9 +2035,23 @@ static int episodioPadrao(int *temp, int *epis, int *origem) {
     return 1;
   }
   // Local history works before the asynchronous progress response arrives.
+  // An episode marked "not watched" past where the person is (an old stray
+  // mark, unmarked again) does not jump Play ahead: the episode after the
+  // last watched one wins when it comes first. Kaiju No. 8: S2E1..6 watched,
+  // S2E11 unmarked, Play is S2E7. An unmarked S1E3 inside S1E1..10 watched
+  // still gives S1E3.
   { int t, e;
-    if ((ci && vistoep_primeiro_nao_visto(ci->imdb, &t, &e)) ||
-        extras_proximo_episodio(&t, &e)) {
+    if (ci && vistoep_primeiro_nao_visto(ci->imdb, &t, &e)) {
+      int pt, pe;
+      if (proximoDosVistos(ci, &pt, &pe) && (pt < t || (pt == t && pe < e))) {
+        t = pt; e = pe;
+      }
+      if (temp) *temp = t;
+      if (epis) *epis = e;
+      if (origem) *origem = 3;
+      return 1;
+    }
+    if (extras_proximo_episodio(&t, &e)) {
       if (temp) *temp = t;
       if (epis) *epis = e;
       if (origem) *origem = 3;
@@ -2016,6 +2071,13 @@ static int episodioPadrao(int *temp, int *epis, int *origem) {
         }
       }
     } }
+  // Only watched marks, no progress from Trakt: episodes finished on this
+  // device or marked by hand, or Simkl's history. Without this, finishing
+  // S1E1..4 left Play on S1E1.
+  if (ci && proximoDosVistos(ci, temp, epis)) {
+    if (origem) *origem = 3;
+    return 1;
+  }
   // No history or everything watched: start from the first regular episode.
   ep = primeiroEpRegular();
   if (!ep) return 0;

@@ -42,6 +42,13 @@ int main(void) {
   cat_definir_episodios(0, eps, 20);
   abrir(); alvo(1, 1); ancora(1, 1); // No history.
 
+  // Watched marks only, no Trakt progress: S1E1..4 finished on this device
+  // (or from Simkl), nothing unmarked. Play is S1E5, not S1E1.
+  for (int i = 0; i < 4; i++)
+    vistoep_definir(c.imdb, eps[i].temporada, eps[i].episodio, 1);
+  abrir(); alvo(1, 5); ancora(1, 5);
+  vistoep_esquecer();
+
   // History arrives after opening: S1 watched, S2E1..8 watched, next S2E9.
   for (int i = 0; i < 20; i++)
     vistoep_definir(c.imdb, eps[i].temporada, eps[i].episodio, i < 18);
@@ -62,12 +69,27 @@ int main(void) {
   extras_teste_progresso(c.imdb, 20, 20, 0, 0);
   abrir(); alvo(1, 1); ancora(1, 1);
 
+  // A stray mark unmarked again past where the person is (Kaiju No. 8: S2E11
+  // watched by mistake, then unmarked): S2E7, not the unmarked episode.
+  vistoep_esquecer();
+  extras_teste_progresso(c.imdb, 0, 20, 0, 0);
+  for (int i = 0; i < 16; i++)
+    vistoep_definir(c.imdb, eps[i].temporada, eps[i].episodio, 1);   // S1, S2E1..6
+  vistoep_definir(c.imdb, 2, 10, 0);
+  abrir(); alvo(2, 7); ancora(2, 7);
+  // Unmarked inside a watched stretch still wins: S1E3 with S1E1..10, S2E1..6.
+  vistoep_definir(c.imdb, 1, 3, 0);
+  abrir(); alvo(1, 3); ancora(1, 3);
+  for (int i = 0; i < 20; i++)
+    vistoep_definir(c.imdb, eps[i].temporada, eps[i].episodio, 1);
+  extras_teste_progresso(c.imdb, 20, 20, 0, 0);
+
   // Resume still takes priority; use an unwatched, partially played episode.
   vistoep_definir(c.imdb, 2, 10, 0);
   c.progresso = 40; c.temporada = 2; c.episodio = 10;
   cat_definir_tudo(&c, 1, NULL, 0);
   cat_definir_episodios(0, eps, 20);
   abrir(); alvo(2, 10); ancora(2, 10);
-  puts("PASS #674: local/late history, hero target, manual focus, all watched, resume");
+  puts("PASS #674: watched marks without Trakt, local/late history, hero target, manual focus, all watched, stray unmark, resume");
   return 0;
 }
